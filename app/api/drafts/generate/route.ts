@@ -12,6 +12,10 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
+  
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const body = await request.json();
   const input = requestSchema.parse(body);
