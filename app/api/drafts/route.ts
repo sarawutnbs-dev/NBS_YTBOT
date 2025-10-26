@@ -28,6 +28,10 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
+  
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const body = await request.json();
   const input = createDraftSchema.parse(body);
@@ -39,8 +43,14 @@ export async function POST(request: Request) {
       status: "PENDING",
       createdById: session.user.id,
       products: {
-        connect: input.products.map((id: string) => ({ id }))
+        create: input.products.map((productId: string) => ({
+          product: { connect: { id: productId } }
+        }))
       }
+    },
+    include: {
+      comment: true,
+      products: { include: { product: true } }
     }
   });
 
