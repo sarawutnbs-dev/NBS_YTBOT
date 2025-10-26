@@ -6,10 +6,5 @@ export default async function ProductsPage() {
     orderBy: { createdAt: "desc" }
   });
 
-  const normalized = products.map((product: (typeof products)[number]) => ({
-    ...product,
-    tags: product.tagsJson ? JSON.parse(product.tagsJson) : []
-  }));
-
-  return <ProductsTable initialProducts={normalized} />;
+  return <ProductsTable initialProducts={products} />;
 }
