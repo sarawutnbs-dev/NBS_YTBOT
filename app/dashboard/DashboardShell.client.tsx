@@ -22,7 +22,7 @@ export default function DashboardShell({ children, session }: DashboardShellProp
   const pathname = usePathname();
 
   const menuItems = routes
-    .filter(item => !item.roles || item.roles.includes(session.user.role))
+    .filter(item => !item.roles || item.roles.includes(session.user.role as "ADMIN"))
     .map(item => ({ key: item.path, label: <Link href={item.path}>{item.label}</Link> }));
 
   return (
