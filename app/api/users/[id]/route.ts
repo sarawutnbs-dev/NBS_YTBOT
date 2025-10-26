@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAdmin } from "@/lib/permissions";
+import { assert, isAdmin, type AppSession } from "@/lib/permissions";
 
 const updateSchema = z.object({
   role: z.enum(["ADMIN", "USER"]).optional(),
@@ -10,7 +10,7 @@ const updateSchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAdmin, session, "Forbidden");
 
   const body = await request.json();
@@ -25,7 +25,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 }
 
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAdmin, session, "Forbidden");
 
   await prisma.user.delete({ where: { id: params.id } });

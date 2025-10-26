@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAdmin } from "@/lib/permissions";
+import { assert, isAdmin, type AppSession } from "@/lib/permissions";
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -10,7 +10,7 @@ const createUserSchema = z.object({
 });
 
 export async function GET() {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAdmin, session, "Forbidden");
 
   const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" } });
@@ -18,7 +18,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAdmin, session, "Forbidden");
 
   const body = await request.json();

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAdmin } from "@/lib/permissions";
+import { assert, isAdmin, type AppSession } from "@/lib/permissions";
 
 const settingsSchema = z.object({
   channelId: z.string().min(1),
@@ -11,7 +11,7 @@ const settingsSchema = z.object({
 });
 
 export async function GET() {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAdmin, session, "Forbidden");
 
   const settings = await prisma.appSetting.findFirst({ orderBy: { createdAt: "desc" } });
@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAdmin, session, "Forbidden");
 
   const body = await request.json();
