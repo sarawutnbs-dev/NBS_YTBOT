@@ -1,5 +1,7 @@
 import type { AppSession } from "./auth";
 
+export type { AppSession };
+
 type Predicate = (session: AppSession | null) => boolean;
 
 export const isAdmin: Predicate = session => session?.user?.role === "ADMIN";
