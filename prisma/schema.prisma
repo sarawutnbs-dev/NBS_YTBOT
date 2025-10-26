@@ -3,14 +3,26 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum DraftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  POSTED
 }
 
 model User {
   id             String        @id @default(cuid())
   email          String        @unique
-  role           String        @default("USER")
+  role           UserRole      @default(USER)
   allowed        Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -23,7 +35,7 @@ model Product {
   id            String          @id @default(cuid())
   name          String
   affiliateUrl  String
-  tagsJson      String?
+  tags          String[]        @default([])
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   drafts        DraftProduct[]
@@ -50,8 +62,8 @@ model Draft {
   commentId         String         @unique
   comment           Comment        @relation(fields: [commentId], references: [id])
   reply             String
-  status            String         @default("PENDING")
-  suggestedProducts String?
+  status            DraftStatus    @default(PENDING)
+  suggestedProducts Json?
   engagementScore   Float?
   relevanceScore    Float?
   createdAt         DateTime       @default(now())
