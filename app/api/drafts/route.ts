@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAllowedUser } from "@/lib/permissions";
+import { assert, isAllowedUser, type AppSession } from "@/lib/permissions";
 
 const createDraftSchema = z.object({
   commentId: z.string(),
@@ -11,7 +11,7 @@ const createDraftSchema = z.object({
 });
 
 export async function GET() {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
 
   const drafts = await prisma.draft.findMany({
@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
 
   const body = await request.json();

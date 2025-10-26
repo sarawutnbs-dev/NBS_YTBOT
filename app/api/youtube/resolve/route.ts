@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAllowedUser } from "@/lib/permissions";
+import { assert, isAllowedUser, type AppSession, type AppSession } from "@/lib/permissions";
 import { resolveCommentThread } from "@/lib/youtube";
 
 const requestSchema = z.object({ id: z.string() });
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
 
   const body = await request.json();

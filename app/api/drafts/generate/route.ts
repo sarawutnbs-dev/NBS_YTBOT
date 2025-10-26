@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAllowedUser } from "@/lib/permissions";
+import { assert, isAllowedUser, type AppSession } from "@/lib/permissions";
 import { generateDraft } from "@/lib/ai";
 
 const requestSchema = z.object({
@@ -10,7 +10,7 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
 
   const body = await request.json();
