@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAllowedUser, type AppSession, type AppSession } from "@/lib/permissions";
+import { assert, isAllowedUser, type AppSession } from "@/lib/permissions";
 import { listRecentChannelComments } from "@/lib/youtube";
 import { appConfig } from "@/lib/config";
 

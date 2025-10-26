@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerAuthSession } from "@/lib/auth";
-import { assert, isAllowedUser, type AppSession, type AppSession } from "@/lib/permissions";
+import { assert, isAllowedUser, type AppSession } from "@/lib/permissions";
 import { resolveCommentThread } from "@/lib/youtube";
 
 const requestSchema = z.object({ id: z.string() });
