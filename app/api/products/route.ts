@@ -24,12 +24,7 @@ export async function GET() {
   assert(isAllowedUser, session, "Forbidden");
 
   const products = await prisma.product.findMany({ orderBy: { createdAt: "desc" } });
-  return NextResponse.json(
-    products.map((product: (typeof products)[number]) => ({
-      ...product,
-      tags: product.tagsJson ? JSON.parse(product.tagsJson) : []
-    }))
-  );
+  return NextResponse.json(products);
 }
 
 export async function POST(request: Request) {
@@ -43,15 +38,9 @@ export async function POST(request: Request) {
     data: {
       name: input.name,
       affiliateUrl: input.affiliateUrl,
-      tagsJson: JSON.stringify(Array.isArray(input.tags) ? input.tags : [])
+      tags: Array.isArray(input.tags) ? input.tags : []
     }
   });
 
-  return NextResponse.json(
-    {
-      ...product,
-      tags: Array.isArray(input.tags) ? input.tags : []
-    },
-    { status: 201 }
-  );
+  return NextResponse.json(product, { status: 201 });
 }
