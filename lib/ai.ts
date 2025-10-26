@@ -30,9 +30,9 @@ export async function generateDraft({
 
   const client = new OpenAI({ apiKey: env.AI_API_KEY });
 
-  const response = await client.responses.create({
+  const response = await client.chat.completions.create({
     model: env.AI_MODEL,
-    input: [
+    messages: [
       {
         role: "system",
         content:
@@ -79,12 +79,12 @@ export async function generateDraft({
     }
   });
 
-  const content = response.output?.[0]?.content?.[0];
-  if (content?.type !== "output_text") {
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
     throw new Error("Unexpected AI response format");
   }
 
-  const parsed = JSON.parse(content.text) as {
+  const parsed = JSON.parse(content) as {
     reply: string;
     products: Array<{ id: string; name: string; affiliate_url: string }>;
     scores: { engagement: number; relevance: number };
