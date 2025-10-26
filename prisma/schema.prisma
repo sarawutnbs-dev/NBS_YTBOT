@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  role           String        @default("USER")
+  allowed        Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  drafts         Draft[]       @relation("DraftAuthor")
+  approvedDrafts Draft[]       @relation("DraftApprover")
+  tokens         OAuthToken[]
+}
+
+model Product {
+  id            String          @id @default(cuid())
+  name          String
+  affiliateUrl  String
+  tagsJson      String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  drafts        DraftProduct[]
+}
+
+model Comment {
+  id                   String    @id @default(cuid())
+  commentId            String    @unique
+  textOriginal         String
+  updatedAt            DateTime
+  authorDisplayName    String
+  authorProfileImageUrl String?
+  authorChannelId      String?
+  videoId              String
+  canReply             Boolean
+  totalReplyCount      Int
+  publishedAt          DateTime
+  createdAt            DateTime  @default(now())
+  draft                Draft?
+}
+
+model Draft {
+  id                String         @id @default(cuid())
+  commentId         String         @unique
+  comment           Comment        @relation(fields: [commentId], references: [id])
+  reply             String
+  status            String         @default("PENDING")
+  suggestedProducts String?
+  engagementScore   Float?
+  relevanceScore    Float?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  createdById       String?
+  createdBy         User?          @relation("DraftAuthor", fields: [createdById], references: [id])
+  approvedById      String?
+  approvedBy        User?          @relation("DraftApprover", fields: [approvedById], references: [id])
+  approvedAt        DateTime?
+  postedAt          DateTime?
+  products          DraftProduct[]
+}
+
+model DraftProduct {
+  draftId   String
+  productId String
+  createdAt DateTime @default(now())
+
+  draft   Draft   @relation(fields: [draftId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([draftId, productId])
+}
+
+model OAuthToken {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String
+  accessToken  String
+  refreshToken String?
+  scope        String?
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, provider], name: "userId_provider")
+}
+
+model AppSetting {
+  id          String   @id @default(cuid())
+  channelId   String
+  syncDays    Int      @default(14)
+  maxSyncDays Int      @default(30)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

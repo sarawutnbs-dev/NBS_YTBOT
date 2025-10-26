@@ -1,0 +1,22 @@
+{
+  "kind": "youtube#commentThreadListResponse",
+  "items": [
+    {
+      "id": "Ugx12345",
+      "snippet": {
+        "videoId": "abc123",
+        "channelId": "NotebookSPEC",
+        "topLevelComment": {
+          "snippet": {
+            "textOriginal": "This build looks awesome! Can it handle 4K editing?",
+            "authorDisplayName": "ViewerOne",
+            "updatedAt": "2024-04-10T12:00:00Z",
+            "publishedAt": "2024-04-10T12:00:00Z",
+            "likeCount": 3
+          }
+        },
+        "totalReplyCount": 0
+      }
+    }
+  ]
+}
