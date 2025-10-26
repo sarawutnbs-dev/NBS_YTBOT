@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerAuthSession } from "@/lib/auth";
-import { isAllowedUser } from "@/lib/permissions";
+import { isAllowedUser, type AppSession } from "@/lib/permissions";
 import DashboardShell from "./DashboardShell.client";
 
 export default async function DashboardLayout({
@@ -8,7 +8,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getServerAuthSession();
+  const session = await getServerAuthSession() as AppSession | null;
 
   if (!session?.user) {
     redirect("/auth/login");
