@@ -15,13 +15,14 @@ export async function ensureVideoIndexFor(videoIds: Set<string>) {
     try {
       const vi = await prisma.videoIndex.findUnique({ where: { videoId } });
       
-      if (vi && (vi.status === IndexStatus.READY || vi.status === IndexStatus.INDEXING)) {
-        console.log(`[transcriptQueue] Video ${videoId} already ${vi.status}, skipping`);
+      // Skip only if READY (allow re-running INDEXING/FAILED/NONE)
+      if (vi && vi.status === IndexStatus.READY) {
+        console.log(`[transcriptQueue] Video ${videoId} already READY, skipping`);
         continue;
       }
 
-      // ถ้าไม่มี หรือเคย FAILED/NONE → เริ่มทำใหม่
-      console.log(`[transcriptQueue] Queueing video ${videoId} for indexing`);
+      // ถ้าไม่มี หรือเคย FAILED/NONE/INDEXING → เริ่มทำใหม่
+      console.log(`[transcriptQueue] Queueing video ${videoId} for indexing (current status: ${vi?.status ?? 'NONE'})`);
       await prisma.videoIndex.upsert({
         where: { videoId },
         update: { status: IndexStatus.INDEXING },
