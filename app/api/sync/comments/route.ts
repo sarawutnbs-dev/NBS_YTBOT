@@ -78,12 +78,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ synced });
   } catch (error) {
+    console.error("Sync comments error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to sync comments from YouTube";
 
     return NextResponse.json(
       {
-        error: message
+        error: message,
+        details: error instanceof Error ? error.stack : String(error)
       },
       { status: 500 }
     );
