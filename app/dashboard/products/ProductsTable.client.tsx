@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button, Popconfirm, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import axios from "axios";
+import useSWR from "swr";
 
 import ProductForm from "./ProductForm.client";
 
@@ -16,33 +17,19 @@ type ProductWithTags = {
   updatedAt: string | Date;
 };
 
-type ProductsTableProps = {
-  initialProducts: ProductWithTags[];
-};
+const fetcher = (url: string) => axios.get(url).then((res) => res.data);
 
-export default function ProductsTable({ initialProducts }: ProductsTableProps) {
-  const [products, setProducts] = useState<ProductWithTags[]>(initialProducts);
+export default function ProductsTable() {
   const [loading, setLoading] = useState(false);
-
-  async function reload() {
-    setLoading(true);
-    try {
-      const { data } = await axios.get<ProductWithTags[]>("/api/products");
-      setProducts(data);
-    } catch (error) {
-      console.error(error);
-      message.error("Failed to load products");
-    } finally {
-      setLoading(false);
-    }
-  }
+  
+  const { data: products = [], mutate } = useSWR<ProductWithTags[]>("/api/products", fetcher);
 
   async function handleDelete(id: string) {
     try {
       setLoading(true);
       await axios.delete(`/api/products/${id}`);
-      message.success("Product removed");
-      reload();
+      message.success("Product deleted");
+      mutate(); // Refresh data
     } catch (error) {
       console.error(error);
       message.error("Failed to delete product");
@@ -90,7 +77,7 @@ export default function ProductsTable({ initialProducts }: ProductsTableProps) {
 
   return (
     <>
-      <ProductForm onCreated={reload} />
+      <ProductForm onCreated={() => mutate()} />
       <Table<ProductWithTags>
         rowKey="id"
         loading={loading}

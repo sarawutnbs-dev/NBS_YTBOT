@@ -3,18 +3,19 @@
 import { Form, Input, InputNumber, Button, message } from "antd";
 import type { AppSetting } from "@prisma/client";
 import axios from "axios";
+import useSWR from "swr";
 
-type SettingsFormProps = {
-  config: AppSetting | null;
-};
+const fetcher = (url: string) => axios.get(url).then((res) => res.data);
 
-export default function SettingsForm({ config }: SettingsFormProps) {
+export default function SettingsForm() {
   const [form] = Form.useForm();
+  const { data: config, mutate } = useSWR<AppSetting | null>("/api/settings", fetcher);
 
   async function handleSubmit(values: any) {
     try {
       await axios.post("/api/settings", values);
       message.success("Settings saved");
+      mutate(); // Refresh data
     } catch (error) {
       console.error(error);
       message.error("Failed to save settings");

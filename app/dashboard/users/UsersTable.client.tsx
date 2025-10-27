@@ -5,37 +5,23 @@ import { Button, Select, Space, Switch, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { User } from "@prisma/client";
 import axios from "axios";
+import useSWR from "swr";
 
 import UserForm from "./UserForm.client";
 
-type UsersTableProps = {
-  initialUsers: User[];
-  form?: React.ReactNode;
-};
+const fetcher = (url: string) => axios.get(url).then((res) => res.data);
 
-export default function UsersTable({ initialUsers }: UsersTableProps) {
-  const [users, setUsers] = useState<User[]>(initialUsers);
+export default function UsersTable() {
   const [loading, setLoading] = useState(false);
-
-  async function reload() {
-    setLoading(true);
-    try {
-      const { data } = await axios.get<User[]>("/api/users");
-      setUsers(data);
-    } catch (error) {
-      console.error(error);
-      message.error("Failed to load users");
-    } finally {
-      setLoading(false);
-    }
-  }
+  
+  const { data: users = [], mutate } = useSWR<User[]>("/api/users", fetcher);
 
   async function updateUser(id: string, payload: Partial<User>) {
     try {
       setLoading(true);
       await axios.patch(`/api/users/${id}`, payload);
       message.success("User updated");
-      reload();
+      mutate();
     } catch (error) {
       console.error(error);
       message.error("Failed to update user");
@@ -49,7 +35,7 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
       setLoading(true);
       await axios.delete(`/api/users/${id}`);
       message.success("User removed");
-      reload();
+      mutate();
     } catch (error) {
       console.error(error);
       message.error("Failed to remove user");
@@ -110,7 +96,7 @@ export default function UsersTable({ initialUsers }: UsersTableProps) {
 
   return (
     <>
-      <UserForm onCreated={reload} />
+      <UserForm onCreated={() => mutate()} />
       <Table<User>
         rowKey="id"
         loading={loading}

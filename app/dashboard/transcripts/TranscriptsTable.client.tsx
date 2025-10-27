@@ -43,7 +43,11 @@ export default function TranscriptsTable() {
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
 
   const swrKey = `/api/transcripts?q=${searchQuery}&status=${status === "ALL" ? "" : status}&page=${page}&pageSize=${pageSize}`;
-  const { data, error, isLoading, mutate } = useSWR<ListResponse>(swrKey, fetcher);
+  const { data, error, isLoading, mutate } = useSWR<ListResponse>(swrKey, fetcher, {
+    refreshInterval: status === "INDEXING" ? 3000 : 0, // Auto-refresh เฉพาะเมื่อกรอง INDEXING status
+    revalidateOnFocus: false, // ปิด auto-refresh (ใช้ manual refresh แทน)
+    dedupingInterval: 2000, // Prevent duplicate requests within 2s
+  });
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);

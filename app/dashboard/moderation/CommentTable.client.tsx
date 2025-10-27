@@ -5,25 +5,27 @@ import { Button, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { Draft, Comment } from "@prisma/client";
 import axios from "axios";
+import useSWR from "swr";
 import DraftEditor, { type DraftEditorValues } from "./DraftEditor.client";
 
 type CommentRow = Comment & {
   draft: Draft | null;
 };
 
-type CommentTableProps = {
-  comments: CommentRow[];
-};
+const fetcher = (url: string) => axios.get(url).then((res) => res.data);
 
-export default function CommentTable({ comments }: CommentTableProps) {
+export default function CommentTable() {
   const [selected, setSelected] = useState<CommentRow | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  const { data: comments = [], mutate } = useSWR<CommentRow[]>("/api/comments", fetcher);
 
   async function handleGenerate(record: CommentRow) {
     try {
       setLoading(true);
       await axios.post("/api/drafts/generate", { commentId: record.id });
       message.success("Draft generation triggered");
+      mutate(); // Refresh data
     } catch (error) {
       console.error(error);
       message.error("Failed to trigger draft generation");

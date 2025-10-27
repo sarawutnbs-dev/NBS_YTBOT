@@ -5,22 +5,20 @@ import { fetchVideoMeta, getCaptions, chunkTranscript, buildIndex } from "@/lib/
 export async function indexVideo({ videoId }: { videoId: string }) {
   console.log(`[indexVideo] Starting for videoId: ${videoId}`);
 
-  // เช็กอีกชั้นกันซ้ำ: ถ้า READY อยู่แล้ว → ข้าม (INDEXING ให้ทำต่อเพื่อ update title)
+  // เช็กอีกชั้นกันซ้ำ: ถ้า READY หรือ INDEXING อยู่ → ข้าม
   const current = await prisma.videoIndex.findUnique({ where: { videoId } });
-  if (current && current.status === IndexStatus.READY) {
-    console.log(`[indexVideo] Video ${videoId} already READY, skipping`);
+  if (current && (current.status === IndexStatus.READY || current.status === IndexStatus.INDEXING)) {
+    console.log(`[indexVideo] Video ${videoId} already ${current.status}, skipping`);
     return current;
   }
 
-  // ตั้งสถานะ INDEXING และดึง metadata
+  // ตั้งสถานะ INDEXING
   console.log(`[indexVideo] Fetching video metadata for ${videoId}`);
   const meta = await fetchVideoMeta(videoId);
-  const title = meta?.title ?? "";
-  
   await prisma.videoIndex.upsert({
     where: { videoId },
-    update: { status: IndexStatus.INDEXING, title },
-    create: { videoId, status: IndexStatus.INDEXING, title }
+    update: { status: IndexStatus.INDEXING, title: meta?.title ?? "" },
+    create: { videoId, status: IndexStatus.INDEXING, title: meta?.title ?? "" }
   });
 
   try {
