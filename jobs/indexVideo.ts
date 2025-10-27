@@ -7,9 +7,14 @@ export async function indexVideo({ videoId }: { videoId: string }) {
 
   // เช็กอีกชั้นกันซ้ำ: ถ้า READY หรือ INDEXING อยู่ → ข้าม
   const current = await prisma.videoIndex.findUnique({ where: { videoId } });
-  if (current && (current.status === IndexStatus.READY || current.status === IndexStatus.INDEXING)) {
-    console.log(`[indexVideo] Video ${videoId} already ${current.status}, skipping`);
+
+  if (current?.status === IndexStatus.READY) {
+    console.log(`[indexVideo] Video ${videoId} already READY, skipping`);
     return current;
+  }
+
+  if (current?.status === IndexStatus.INDEXING) {
+    console.log(`[indexVideo] Video ${videoId} currently INDEXING, continuing existing job`);
   }
 
   // ตั้งสถานะ INDEXING
@@ -17,7 +22,7 @@ export async function indexVideo({ videoId }: { videoId: string }) {
   const meta = await fetchVideoMeta(videoId);
   await prisma.videoIndex.upsert({
     where: { videoId },
-    update: { status: IndexStatus.INDEXING, title: meta?.title ?? "" },
+    update: { status: IndexStatus.INDEXING, title: meta?.title ?? current?.title ?? "" },
     create: { videoId, status: IndexStatus.INDEXING, title: meta?.title ?? "" }
   });
 

@@ -5,6 +5,7 @@ const envSchema = z.object({
   YOUTUBE_CHANNEL_ID: z.string().min(1, "Missing YOUTUBE_CHANNEL_ID"),
   GOOGLE_CLIENT_ID: z.string().min(1, "Missing GOOGLE_CLIENT_ID"),
   GOOGLE_CLIENT_SECRET: z.string().min(1, "Missing GOOGLE_CLIENT_SECRET"),
+  YOUTUBE_OAUTH_REFRESH_TOKEN: z.string().optional(),
   NEXTAUTH_SECRET: z.string().min(1, "Missing NEXTAUTH_SECRET"),
   NEXTAUTH_URL: z.string().optional(),
   TOKEN_ENCRYPTION_KEY: z.string().min(32, "Missing TOKEN_ENCRYPTION_KEY"),

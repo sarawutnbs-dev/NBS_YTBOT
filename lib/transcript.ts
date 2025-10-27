@@ -1,13 +1,91 @@
 import { google } from "googleapis";
 import { getEnv } from "./config";
 
-const youtube = google.youtube("v3");
+type YoutubeClient = ReturnType<typeof google.youtube>;
+
+let cachedOauthYoutube: YoutubeClient | null = null;
+let cachedApiYoutube: YoutubeClient | null = null;
+
+function getOauthYoutubeClient(): YoutubeClient | null {
+  if (cachedOauthYoutube) {
+    return cachedOauthYoutube;
+  }
+
+  const env = getEnv();
+
+  if (!env.YOUTUBE_OAUTH_REFRESH_TOKEN) {
+    return null;
+  }
+
+  const oauth2Client = new google.auth.OAuth2(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({ refresh_token: env.YOUTUBE_OAUTH_REFRESH_TOKEN });
+
+  cachedOauthYoutube = google.youtube({
+    version: "v3",
+    auth: oauth2Client,
+  });
+
+  return cachedOauthYoutube;
+}
+
+function getApiKeyYoutubeClient(): YoutubeClient {
+  if (!cachedApiYoutube) {
+    const env = getEnv();
+    cachedApiYoutube = google.youtube({
+      version: "v3",
+      auth: env.YOUTUBE_API_KEY,
+    });
+  }
+
+  return cachedApiYoutube;
+}
+
+function getYoutubeClient(): YoutubeClient {
+  return getOauthYoutubeClient() ?? getApiKeyYoutubeClient();
+}
+
+async function extractCaptionText(payload: unknown): Promise<string | null> {
+  if (!payload) {
+    return null;
+  }
+
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  if (Buffer.isBuffer(payload)) {
+    return payload.toString("utf-8");
+  }
+
+  if (payload instanceof Uint8Array) {
+    return Buffer.from(payload).toString("utf-8");
+  }
+
+  const maybeAsync = payload as AsyncIterable<unknown>;
+
+  if (maybeAsync && typeof maybeAsync[Symbol.asyncIterator] === "function") {
+    let output = "";
+
+    for await (const chunk of maybeAsync) {
+      if (typeof chunk === "string") {
+        output += chunk;
+      } else if (Buffer.isBuffer(chunk)) {
+        output += chunk.toString("utf-8");
+      } else if (chunk instanceof Uint8Array) {
+        output += Buffer.from(chunk).toString("utf-8");
+      }
+    }
+
+    return output.length > 0 ? output : null;
+  }
+
+  return null;
+}
 
 export async function fetchVideoMeta(videoId: string) {
-  const env = getEnv();
+  const youtube = getYoutubeClient();
   try {
     const response = await youtube.videos.list({
-      key: env.YOUTUBE_API_KEY,
       part: ["snippet"],
       id: [videoId],
     });
@@ -27,16 +105,28 @@ export async function fetchVideoMeta(videoId: string) {
 }
 
 export async function getCaptions(videoId: string): Promise<string | null> {
-  const env = getEnv();
+  const youtube = getYoutubeClient();
   try {
     // ดึง caption tracks
     const response = await youtube.captions.list({
-      key: env.YOUTUBE_API_KEY,
-      part: ["snippet"],
+      part: ["id", "snippet"],
       videoId: videoId,
     });
 
     const captions = response.data.items;
+    if (process.env.NODE_ENV !== "production") {
+      const debugTracks = captions?.map((c) => ({
+        id: c.id,
+        language: c.snippet?.language,
+        name: c.snippet?.name,
+        trackKind: c.snippet?.trackKind,
+        isAutoSynced: c.snippet?.isAutoSynced,
+        isCC: c.snippet?.isCC,
+        status: c.snippet?.status,
+        lastUpdated: c.snippet?.lastUpdated,
+      }));
+      console.log("[getCaptions] Tracks discovered", { videoId, tracks: debugTracks });
+    }
     if (!captions || captions.length === 0) {
       return null;
     }
@@ -54,12 +144,12 @@ export async function getCaptions(videoId: string): Promise<string | null> {
     // ดาวน์โหลด caption (ต้องใช้ OAuth token ถ้าเป็น private video)
     // สำหรับ public video สามารถใช้ API key ได้
     const captionResponse = await youtube.captions.download({
-      key: env.YOUTUBE_API_KEY,
       id: preferredTrack.id,
       tfmt: "srt",
+      alt: "media",
     });
 
-    return captionResponse.data as string;
+    return await extractCaptionText(captionResponse.data);
   } catch (error) {
     console.error("Error fetching captions:", error);
     return null;
