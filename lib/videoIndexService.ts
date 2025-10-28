@@ -13,6 +13,7 @@ export type VideoPreview = {
   videoId: string;
   title: string;
   status: IndexStatus;
+  source?: string | null; // "captions" | "github"
   summary: {
     totalChunks: number;
     keywords: string[];
@@ -160,6 +161,7 @@ export async function getPreview(videoId: string): Promise<VideoPreview | null> 
     videoId: videoIndex.videoId,
     title: videoIndex.title,
     status: videoIndex.status,
+    source: videoIndex.source,
     summary,
     chunks,
   };

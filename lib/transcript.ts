@@ -156,6 +156,37 @@ export async function getCaptions(videoId: string): Promise<string | null> {
   }
 }
 
+/**
+ * Fetch transcript from GitHub repository
+ * Repository: sarawutnbs-dev/youtube-transcript
+ * Structure: /{year}/{videoID}.txt
+ */
+export async function getTranscriptFromGitHub(videoId: string): Promise<string | null> {
+  try {
+    const year = new Date().getFullYear();
+    const githubUrl = `https://raw.githubusercontent.com/sarawutnbs-dev/youtube-transcript/main/${year}/${videoId}.txt`;
+    
+    console.log(`[getTranscriptFromGitHub] Fetching from ${githubUrl}`);
+    
+    const response = await fetch(githubUrl);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(`[getTranscriptFromGitHub] File not found for ${videoId}`);
+        return null;
+      }
+      throw new Error(`GitHub fetch failed: ${response.status} ${response.statusText}`);
+    }
+    
+    const text = await response.text();
+    console.log(`[getTranscriptFromGitHub] ✅ Successfully fetched transcript for ${videoId} (${text.length} chars)`);
+    return text;
+  } catch (error) {
+    console.error(`[getTranscriptFromGitHub] Error fetching ${videoId}:`, error);
+    return null;
+  }
+}
+
 export function chunkTranscript(text: string, maxChars = 400): string[] {
   const chunks: string[] = [];
   const sentences = text.split(/[.!?]\s+/);

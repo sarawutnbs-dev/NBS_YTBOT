@@ -1,9 +1,10 @@
 "use client";
 
 import { Modal, Card, Spin, Tag, Typography, Button, message, Space } from "antd";
-import { CopyOutlined } from "@ant-design/icons";
+import { CopyOutlined, GithubOutlined } from "@ant-design/icons";
 import useSWR from "swr";
 import axios from "axios";
+import { useState } from "react";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -17,6 +18,7 @@ type PreviewData = {
   videoId: string;
   title: string;
   status: string;
+  source?: string; // "captions" | "github"
   summary: {
     totalChunks: number;
     keywords: string[];
@@ -32,8 +34,18 @@ type PreviewData = {
 const fetcher = (url: string) => axios.get(url).then((res) => res.data);
 
 export default function PreviewModal({ open, onClose, videoId }: PreviewModalProps) {
+  const [showGitHubRaw, setShowGitHubRaw] = useState(false);
+  
   const { data, error, isLoading } = useSWR<PreviewData>(
     open && videoId ? `/api/transcripts/${videoId}/preview` : null,
+    fetcher
+  );
+
+  const { data: githubData, isLoading: githubLoading } = useSWR<{
+    content: string;
+    url: string;
+  }>(
+    open && videoId && showGitHubRaw ? `/api/transcripts/${videoId}/github-raw` : null,
     fetcher
   );
 
@@ -45,10 +57,23 @@ export default function PreviewModal({ open, onClose, videoId }: PreviewModalPro
     message.success("Copied transcript to clipboard!");
   };
 
+  const handleCopyGitHub = () => {
+    if (!githubData?.content) return;
+    navigator.clipboard.writeText(githubData.content);
+    message.success("Copied GitHub transcript to clipboard!");
+  };
+
+  const handleViewGitHub = () => {
+    setShowGitHubRaw(true);
+  };
+
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={() => {
+        setShowGitHubRaw(false);
+        onClose();
+      }}
       width={900}
       footer={null}
       title="Transcript Preview"
@@ -66,7 +91,7 @@ export default function PreviewModal({ open, onClose, videoId }: PreviewModalPro
         </div>
       )}
 
-      {data && (
+      {data && !showGitHubRaw && (
         <div>
           {/* Header */}
           <div style={{ marginBottom: 16 }}>
@@ -77,9 +102,28 @@ export default function PreviewModal({ open, onClose, videoId }: PreviewModalPro
               <Space>
                 <Tag>{data.videoId}</Tag>
                 <Tag color={data.status === "READY" ? "green" : "default"}>{data.status}</Tag>
+                {data.source && (
+                  <Tag color={data.source === "github" ? "purple" : "blue"}>
+                    {data.source === "github" ? "GitHub" : "YouTube Captions"}
+                  </Tag>
+                )}
               </Space>
             </Space>
           </div>
+
+          {/* Show GitHub Raw Button if source is github */}
+          {data.source === "github" && (
+            <div style={{ marginBottom: 16 }}>
+              <Button
+                type="dashed"
+                icon={<GithubOutlined />}
+                onClick={handleViewGitHub}
+                block
+              >
+                View GitHub Raw File
+              </Button>
+            </div>
+          )}
 
           {/* Summary */}
           <Card title="Summary" size="small" style={{ marginBottom: 16 }}>
@@ -162,6 +206,63 @@ export default function PreviewModal({ open, onClose, videoId }: PreviewModalPro
               )}
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* GitHub Raw View */}
+      {data && showGitHubRaw && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <Space>
+              <Button onClick={() => setShowGitHubRaw(false)}>
+                ← Back to Preview
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={handleCopyGitHub}
+                type="primary"
+              >
+                Copy Raw Text
+              </Button>
+            </Space>
+          </div>
+
+          {githubLoading && (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <Spin size="large" />
+            </div>
+          )}
+
+          {githubData && (
+            <Card
+              title={
+                <Space>
+                  <GithubOutlined />
+                  <span>GitHub Raw Transcript</span>
+                  <Tag>{data.videoId}</Tag>
+                </Space>
+              }
+              size="small"
+            >
+              <div
+                style={{
+                  maxHeight: "70vh",
+                  overflowY: "auto",
+                  padding: "12px",
+                  backgroundColor: "#f5f5f5",
+                  borderRadius: "4px",
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                  fontSize: "13px",
+                }}
+              >
+                {githubData.content}
+              </div>
+              <div style={{ marginTop: 8, fontSize: "12px", color: "#888" }}>
+                <Text type="secondary">Source: {githubData.url}</Text>
+              </div>
+            </Card>
+          )}
         </div>
       )}
     </Modal>

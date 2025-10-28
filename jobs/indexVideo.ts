@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { IndexStatus } from "@prisma/client";
-import { fetchVideoMeta, getCaptions, chunkTranscript, buildIndex } from "@/lib/transcript";
+import { fetchVideoMeta, getCaptions, getTranscriptFromGitHub, chunkTranscript, buildIndex } from "@/lib/transcript";
 
 export async function indexVideo({ videoId }: { videoId: string }) {
   console.log(`[indexVideo] Starting for videoId: ${videoId}`);
@@ -28,22 +28,30 @@ export async function indexVideo({ videoId }: { videoId: string }) {
 
   try {
     console.log(`[indexVideo] Fetching captions for ${videoId}`);
-    const text = await getCaptions(videoId);
+    let text = await getCaptions(videoId);
+    let source: "captions" | "github" = "captions";
+    
+    // ถ้าไม่มี captions จาก YouTube ให้ลองดึงจาก GitHub
+    if (!text) {
+      console.log(`[indexVideo] No captions from YouTube, trying GitHub for ${videoId}`);
+      text = await getTranscriptFromGitHub(videoId);
+      source = "github";
+    }
     
     if (!text) {
-      // ไม่มีคำบรรยาย → mark FAILED
-      console.log(`[indexVideo] No captions available for ${videoId}`);
+      // ไม่มีคำบรรยายทั้ง YouTube และ GitHub → mark FAILED
+      console.log(`[indexVideo] No transcript available for ${videoId} (YouTube & GitHub)`);
       return await prisma.videoIndex.update({
         where: { videoId },
         data: { 
           status: IndexStatus.FAILED, 
-          errorMessage: "no captions available", 
+          errorMessage: "no transcript available from YouTube or GitHub", 
           source: null 
         }
       });
     }
 
-    console.log(`[indexVideo] Chunking transcript for ${videoId}`);
+    console.log(`[indexVideo] Chunking transcript for ${videoId} (source: ${source})`);
     const chunks = chunkTranscript(text, 400);
     
     console.log(`[indexVideo] Building index for ${videoId} (${chunks.length} chunks)`);
@@ -53,13 +61,13 @@ export async function indexVideo({ videoId }: { videoId: string }) {
       where: { videoId },
       data: {
         status: IndexStatus.READY,
-        source: "captions",
+        source,
         chunksJSON: JSON.stringify(chunks),
         summaryJSON: JSON.stringify(summaryJSON)
       }
     });
 
-    console.log(`[indexVideo] ✅ Successfully indexed ${videoId}`);
+    console.log(`[indexVideo] ✅ Successfully indexed ${videoId} from ${source}`);
     return result;
   } catch (e) {
     const errorMessage = (e as Error).message ?? "index failed";
