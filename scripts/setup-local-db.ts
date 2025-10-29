@@ -28,7 +28,8 @@ async function main() {
       channelId: "UCpAQ8Up9IO7qG867etjxuZA",
       syncDays: 14,
       maxSyncDays: 30,
-    },
+      aiTranscriptFallback: false,
+    } as any,
   });
   console.log("✅ App settings created:", settings.channelId);
 

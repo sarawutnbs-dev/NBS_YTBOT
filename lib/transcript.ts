@@ -96,6 +96,7 @@ export async function fetchVideoMeta(videoId: string) {
           title: video.snippet?.title ?? "",
           description: video.snippet?.description ?? "",
           channelTitle: video.snippet?.channelTitle ?? "",
+          publishedAt: video.snippet?.publishedAt ?? null,
         }
       : null;
   } catch (error) {
@@ -165,7 +166,7 @@ export async function getTranscriptFromGitHub(videoId: string): Promise<string |
   try {
     const year = new Date().getFullYear();
     const githubUrl = `https://raw.githubusercontent.com/sarawutnbs-dev/youtube-transcript/main/${year}/${videoId}.txt`;
-    
+
     console.log(`[getTranscriptFromGitHub] Fetching from ${githubUrl}`);
     
     const response = await fetch(githubUrl);

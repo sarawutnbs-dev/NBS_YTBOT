@@ -116,6 +116,7 @@ model AppSetting {
   channelId   String
   syncDays    Int      @default(14)
   maxSyncDays Int      @default(30)
+  aiTranscriptFallback Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -129,6 +130,7 @@ model VideoIndex {
   summaryJSON  String?
   source       String?
   errorMessage String?
+  publishedAt  DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 

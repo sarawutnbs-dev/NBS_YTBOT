@@ -10,10 +10,12 @@ async function main() {
   const settings = await prisma.appSetting.findFirst();
   
   if (settings) {
+    const aiFallbackEnabled = Boolean((settings as { aiTranscriptFallback?: boolean }).aiTranscriptFallback);
     console.log("✅ Channel settings found:");
     console.log("  Channel ID:", settings.channelId);
     console.log("  Sync Days:", settings.syncDays);
     console.log("  Max Sync Days:", settings.maxSyncDays);
+    console.log("  AI Transcript Fallback:", aiFallbackEnabled ? "Enabled" : "Disabled");
     console.log("  Created:", settings.createdAt);
     console.log("  Updated:", settings.updatedAt);
   } else {

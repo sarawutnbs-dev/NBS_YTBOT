@@ -22,8 +22,17 @@ export async function indexVideo({ videoId }: { videoId: string }) {
   const meta = await fetchVideoMeta(videoId);
   await prisma.videoIndex.upsert({
     where: { videoId },
-    update: { status: IndexStatus.INDEXING, title: meta?.title ?? current?.title ?? "" },
-    create: { videoId, status: IndexStatus.INDEXING, title: meta?.title ?? "" }
+    update: {
+      status: IndexStatus.INDEXING,
+      title: meta?.title ?? current?.title ?? "",
+      publishedAt: meta?.publishedAt ? new Date(meta.publishedAt) : current?.publishedAt ?? null
+    },
+    create: {
+      videoId,
+      status: IndexStatus.INDEXING,
+      title: meta?.title ?? "",
+      publishedAt: meta?.publishedAt ? new Date(meta.publishedAt) : null
+    }
   });
 
   try {

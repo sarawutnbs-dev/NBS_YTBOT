@@ -17,8 +17,9 @@ async function main() {
       id: "default",
       channelId: process.env.SEED_CHANNEL_ID ?? "",
       syncDays: 14,
-      maxSyncDays: 30
-    }
+      maxSyncDays: 30,
+      aiTranscriptFallback: false
+    } as any
   });
 }
 
