@@ -39,11 +39,11 @@ export async function indexVideo({ videoId }: { videoId: string }) {
     console.log(`[indexVideo] Fetching captions for ${videoId}`);
     let text = await getCaptions(videoId);
     let source: "captions" | "github" = "captions";
-    
+
     // ถ้าไม่มี captions จาก YouTube ให้ลองดึงจาก GitHub
     if (!text) {
       console.log(`[indexVideo] No captions from YouTube, trying GitHub for ${videoId}`);
-      text = await getTranscriptFromGitHub(videoId);
+      text = await getTranscriptFromGitHub(videoId, meta?.publishedAt);
       source = "github";
     }
     

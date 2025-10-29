@@ -162,12 +162,19 @@ export async function getCaptions(videoId: string): Promise<string | null> {
  * Repository: sarawutnbs-dev/youtube-transcript
  * Structure: /{year}/{videoID}.txt
  */
-export async function getTranscriptFromGitHub(videoId: string): Promise<string | null> {
+export async function getTranscriptFromGitHub(videoId: string, publishedAt?: string | Date | null): Promise<string | null> {
   try {
-    const year = new Date().getFullYear();
+    // ใช้ปีจาก publishedAt ถ้ามี ไม่งั้นใช้ปีปัจจุบัน
+    let year: number;
+    if (publishedAt) {
+      year = new Date(publishedAt).getFullYear();
+    } else {
+      year = new Date().getFullYear();
+    }
+
     const githubUrl = `https://raw.githubusercontent.com/sarawutnbs-dev/youtube-transcript/main/${year}/${videoId}.txt`;
 
-    console.log(`[getTranscriptFromGitHub] Fetching from ${githubUrl}`);
+    console.log(`[getTranscriptFromGitHub] Fetching from ${githubUrl} (year from ${publishedAt ? 'publishedAt' : 'current date'})`);
     
     const response = await fetch(githubUrl);
     
