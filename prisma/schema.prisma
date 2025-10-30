@@ -43,6 +43,10 @@ model Product {
   name          String
   affiliateUrl  String
   tags          String[]        @default([])
+  price         Float?
+  commission    Float?
+  productLink   String?
+  shopeeProductId String?       @unique
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   drafts        DraftProduct[]
