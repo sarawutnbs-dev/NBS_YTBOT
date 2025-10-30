@@ -43,7 +43,7 @@ function createAffiliateLink(productLink: string): string {
   return `https://s.shopee.co.th/an_redir?origin_link=${encodeURIComponent(productLink)}&affiliate_id=${SHOPEE_AFFILIATE_ID}`;
 }
 
-async function fetchShopeeProducts(): Promise<ShopeeProduct[]> {
+async function fetchShopeeProductsPage(page: number, limit: number = 50): Promise<ShopeeProduct[]> {
   const timestamp = Math.floor(Date.now() / 1000);
 
   const query = `
@@ -52,8 +52,8 @@ async function fetchShopeeProducts(): Promise<ShopeeProduct[]> {
         productCatId: ${PRODUCT_CAT_ID}
         listType: 1
         sortType: 5
-        page: 20
-        limit: 50
+        page: ${page}
+        limit: ${limit}
       ) {
         nodes {
           itemId
@@ -96,6 +96,47 @@ async function fetchShopeeProducts(): Promise<ShopeeProduct[]> {
   return data.data.productOfferV2.nodes;
 }
 
+async function fetchAllShopeeProducts(maxProducts: number = 2000): Promise<ShopeeProduct[]> {
+  const allProducts: ShopeeProduct[] = [];
+  const limit = 50; // Shopee API limit per page
+  const totalPages = Math.ceil(maxProducts / limit);
+
+  console.log(`Fetching ${maxProducts} products (${totalPages} pages)...`);
+
+  for (let page = 1; page <= totalPages; page++) {
+    try {
+      console.log(`Fetching page ${page}/${totalPages}...`);
+      const products = await fetchShopeeProductsPage(page, limit);
+
+      if (!products || products.length === 0) {
+        console.log(`No more products at page ${page}. Stopping.`);
+        break;
+      }
+
+      allProducts.push(...products);
+      console.log(`Page ${page}: Got ${products.length} products (Total: ${allProducts.length})`);
+
+      // Stop if we've reached the desired number
+      if (allProducts.length >= maxProducts) {
+        console.log(`Reached target of ${maxProducts} products`);
+        break;
+      }
+
+      // Add a small delay between requests to avoid rate limiting
+      if (page < totalPages) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+    } catch (error) {
+      console.error(`Error fetching page ${page}:`, error);
+      // Continue with what we have if a page fails
+      break;
+    }
+  }
+
+  return allProducts.slice(0, maxProducts);
+}
+
 export async function POST() {
   try {
     const session = await getServerAuthSession() as AppSession | null;
@@ -112,8 +153,8 @@ export async function POST() {
 
     console.log(`Deleted ${deleteResult.count} existing Shopee products`);
 
-    // Fetch products from Shopee
-    const shopeeProducts = await fetchShopeeProducts();
+    // Fetch products from Shopee (2000 products max)
+    const shopeeProducts = await fetchAllShopeeProducts(2000);
 
     if (!shopeeProducts || shopeeProducts.length === 0) {
       return NextResponse.json(

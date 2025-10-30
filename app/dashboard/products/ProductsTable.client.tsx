@@ -84,12 +84,15 @@ export default function ProductsTable() {
       title: "Price",
       dataIndex: "price",
       key: "price",
+      sorter: (a, b) => (a.price || 0) - (b.price || 0),
       render: (value?: number) => value ? `฿${value.toLocaleString()}` : "-"
     },
     {
       title: "Commission",
       dataIndex: "commission",
       key: "commission",
+      sorter: (a, b) => (a.commission || 0) - (b.commission || 0),
+      defaultSortOrder: 'descend' as const,
       render: (value?: number) => value ? `฿${value.toLocaleString()}` : "-"
     },
     {
