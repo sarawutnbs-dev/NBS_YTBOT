@@ -7,6 +7,7 @@ export type VideoIndexListItem = {
   title: string;
   status: IndexStatus;
   updatedAt: Date;
+  publishedAt: Date | null;
 };
 
 export type VideoPreview = {
@@ -58,6 +59,7 @@ export async function listVideoIndex(params: {
         title: true,
         status: true,
         updatedAt: true,
+        publishedAt: true,
       },
       orderBy: { updatedAt: "desc" },
       skip,

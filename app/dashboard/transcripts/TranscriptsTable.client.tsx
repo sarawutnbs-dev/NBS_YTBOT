@@ -17,6 +17,7 @@ type VideoIndex = {
   title: string;
   status: "NONE" | "INDEXING" | "READY" | "FAILED";
   updatedAt: string;
+  publishedAt: string | null;
 };
 
 type ListResponse = {
@@ -101,14 +102,21 @@ export default function TranscriptsTable() {
       title: "Video ID",
       dataIndex: "videoId",
       key: "videoId",
-      width: "20%",
+      width: "15%",
       render: (text: string) => <Tag>{text}</Tag>,
+    },
+    {
+      title: "Year",
+      dataIndex: "publishedAt",
+      key: "publishedAt",
+      width: "10%",
+      render: (date: string | null) => date ? new Date(date).getFullYear() : "-",
     },
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      width: "15%",
+      width: "10%",
       render: (status: string) => (
         <Tag color={statusColors[status] || "default"}>{status}</Tag>
       ),
