@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
 import { assert, isAllowedUser, type AppSession } from "@/lib/permissions";
+import { extractProductTags } from "@/lib/tagUtils";
 import crypto from "crypto";
 
 const SHOPEE_APP_ID = "15175090000";
@@ -171,6 +172,9 @@ export async function POST() {
       try {
         const affiliateLink = createAffiliateLink(product.productLink);
 
+        // Extract tags from product name
+        const tags = extractProductTags(product.productName);
+
         // Create product
         const createdProduct = await prisma.product.create({
           data: {
@@ -180,7 +184,7 @@ export async function POST() {
             productLink: product.productLink,
             affiliateUrl: affiliateLink,
             shopeeProductId: product.itemId.toString(),
-            tags: []
+            tags: tags
           }
         });
 
@@ -188,6 +192,7 @@ export async function POST() {
         results.push({
           productId: product.itemId,
           name: product.productName,
+          tags: tags,
           status: "synced"
         });
       } catch (error) {

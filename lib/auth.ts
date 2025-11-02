@@ -4,6 +4,7 @@ import { getServerSession, type DefaultSession, type NextAuthOptions } from "nex
 import { cache } from "react";
 import type { User, Account, Profile } from "next-auth";
 import type { JWT } from "next-auth/jwt";
+import { upsertOAuthToken } from "./youtubeWrite";
 
 const env = (
   (globalThis as typeof globalThis & {
@@ -15,6 +16,8 @@ export type ExtendedUser = DefaultSession["user"] & {
   id: string;
   role: "ADMIN" | "USER";
   allowed: boolean;
+  accessToken?: string;
+  refreshToken?: string;
 };
 
 export type AppSession = DefaultSession & {
@@ -25,7 +28,14 @@ export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
       clientId: env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: env.GOOGLE_CLIENT_SECRET ?? ""
+      clientSecret: env.GOOGLE_CLIENT_SECRET ?? "",
+      authorization: {
+        params: {
+          access_type: "offline",
+          prompt: "consent",
+          scope: "openid email profile https://www.googleapis.com/auth/youtube.force-ssl"
+        }
+      }
     })
   ],
   session: {
@@ -88,6 +98,25 @@ export const authOptions: NextAuthOptions = {
           token.allowed = dbUser.allowed;
         }
       }
+
+      // Store OAuth tokens in JWT
+      if (account) {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+
+        // Also store tokens in database for YouTube API with automatic refresh
+        if (token.id && account.access_token) {
+          console.log("[Auth] 💾 Storing OAuth tokens in database");
+          await upsertOAuthToken(token.id as string, {
+            accessToken: account.access_token,
+            refreshToken: account.refresh_token ?? null,
+            expiryDate: account.expires_at ? new Date(account.expires_at * 1000) : null,
+            scope: account.scope ?? null
+          });
+          console.log("[Auth] ✅ Tokens stored successfully");
+        }
+      }
+
       return token;
     },
     async session({ session, token }: { session: any; token: JWT }) {
@@ -101,7 +130,9 @@ export const authOptions: NextAuthOptions = {
           ...session.user,
           id: token.id as string,
           role: (token.role ?? "USER") as ExtendedUser["role"],
-          allowed: Boolean(token.allowed)
+          allowed: Boolean(token.allowed),
+          accessToken: token.accessToken as string,
+          refreshToken: token.refreshToken as string
         }
       } as AppSession;
     }

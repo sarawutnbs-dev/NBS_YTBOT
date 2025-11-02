@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getServerAuthSession } from "@/lib/auth";
 import { assert, isAllowedUser, type AppSession } from "@/lib/permissions";
-import { google } from "googleapis";
+import { replyToComment } from "@/lib/youtubeWrite";
 
 export async function POST(
   request: Request,
@@ -43,52 +43,46 @@ export async function POST(
       );
     }
 
-    // Check OAuth tokens
-    if (!session.user.accessToken || !session.user.refreshToken) {
-      return NextResponse.json(
-        { error: "YouTube authentication required" },
-        { status: 401 }
-      );
-    }
+    console.log("[API] 📤 Posting reply to YouTube...");
+    console.log("   User ID:", session.user.id);
+    console.log("   Comment ID:", comment.commentId);
+    console.log("   Reply:", comment.draft.reply.substring(0, 50) + "...");
 
-    // Initialize YouTube API client
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.NEXTAUTH_URL + "/api/auth/callback/google"
-    );
-
-    oauth2Client.setCredentials({
-      access_token: session.user.accessToken,
-      refresh_token: session.user.refreshToken,
+    // Use the YouTube API helper which handles token refresh automatically
+    const response = await replyToComment({
+      userId: session.user.id,
+      parentId: comment.commentId,
+      text: comment.draft.reply
     });
 
-    const youtube = google.youtube({ version: "v3", auth: oauth2Client });
-
-    // Post reply to YouTube
-    const response = await youtube.comments.insert({
-      part: ["snippet"],
-      requestBody: {
-        snippet: {
-          parentId: comment.commentId,
-          textOriginal: comment.draft.reply,
-        },
-      },
-    });
-
-    console.log("[API] ✅ Reply posted to YouTube:", response.data.id);
+    console.log("[API] ✅ Reply posted to YouTube:", response.id);
 
     return NextResponse.json({
       success: true,
       message: "Reply posted successfully",
-      youtubeReplyId: response.data.id,
+      youtubeReplyId: response.id,
     });
-  } catch (error) {
-    console.error("[API] ❌ Error posting reply:", error);
+  } catch (error: any) {
+    console.error("[API] ❌ Error posting reply:");
+    console.error("Error type:", error?.constructor?.name);
+    console.error("Error message:", error?.message);
+    console.error("Error response:", error?.response?.data);
+    console.error("Full error:", JSON.stringify(error, null, 2));
+
+    // Check if it's a missing credentials error
+    if (error?.message?.includes("Missing YouTube OAuth credentials")) {
+      return NextResponse.json({
+        error: "YouTube authentication required. Please logout and login again to grant YouTube permissions.",
+        needsReauth: true
+      }, { status: 401 });
+    }
 
     const message =
       error instanceof Error ? error.message : "Failed to post reply";
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({
+      error: message,
+      details: error?.response?.data || error?.message || "Unknown error"
+    }, { status: 500 });
   }
 }

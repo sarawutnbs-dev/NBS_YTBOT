@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { IndexStatus } from "@prisma/client";
 import { fetchVideoMeta, getCaptions, getTranscriptFromGitHub, chunkTranscript, buildIndex } from "@/lib/transcript";
+import { extractVideoTags } from "@/lib/tagUtils";
 
 export async function indexVideo({ videoId }: { videoId: string }) {
   console.log(`[indexVideo] Starting for videoId: ${videoId}`);
@@ -20,17 +21,27 @@ export async function indexVideo({ videoId }: { videoId: string }) {
   // ตั้งสถานะ INDEXING
   console.log(`[indexVideo] Fetching video metadata for ${videoId}`);
   const meta = await fetchVideoMeta(videoId);
+
+  // Extract tags from video title
+  const videoTitle = meta?.title ?? current?.title ?? "";
+  const tags = extractVideoTags(videoTitle);
+  if (tags.length > 0) {
+    console.log(`[indexVideo] Extracted tags for ${videoId}:`, tags);
+  }
+
   await prisma.videoIndex.upsert({
     where: { videoId },
     update: {
       status: IndexStatus.INDEXING,
-      title: meta?.title ?? current?.title ?? "",
+      title: videoTitle,
+      tags: tags,
       publishedAt: meta?.publishedAt ? new Date(meta.publishedAt) : current?.publishedAt ?? null
     },
     create: {
       videoId,
       status: IndexStatus.INDEXING,
-      title: meta?.title ?? "",
+      title: videoTitle,
+      tags: tags,
       publishedAt: meta?.publishedAt ? new Date(meta.publishedAt) : null
     }
   });

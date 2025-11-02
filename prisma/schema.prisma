@@ -130,6 +130,7 @@ model VideoIndex {
   videoId      String      @unique
   title        String
   status       IndexStatus @default(NONE)
+  tags         String[]    @default([])
   chunksJSON   String?
   summaryJSON  String?
   source       String?
@@ -139,4 +140,30 @@ model VideoIndex {
   updatedAt    DateTime    @updatedAt
 
   @@index([status, updatedAt])
+}
+
+// RAG Models
+model RagDocument {
+  id          Int         @id @default(autoincrement())
+  sourceType  String      // comment | transcript | product
+  sourceId    String
+  meta        Json
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  chunks      RagChunk[]
+
+  @@index([sourceType, sourceId])
+}
+
+model RagChunk {
+  id          Int                      @id @default(autoincrement())
+  docId       Int
+  chunkIndex  Int
+  text        String
+  meta        Json
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime                 @default(now())
+  document    RagDocument              @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@index([docId, chunkIndex])
 }

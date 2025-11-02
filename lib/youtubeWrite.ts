@@ -40,6 +40,24 @@ async function getStoredToken(userId: string) {
   } satisfies OAuthTokenPayload;
 }
 
+/**
+ * Get OAuth token from environment variable as fallback
+ */
+async function getTokenFromEnv() {
+  const env = getEnv();
+
+  if (!env.YOUTUBE_OAUTH_REFRESH_TOKEN) {
+    return null;
+  }
+
+  return {
+    accessToken: "", // Will be obtained from refresh token
+    refreshToken: env.YOUTUBE_OAUTH_REFRESH_TOKEN,
+    expiryDate: null,
+    scope: null
+  } satisfies OAuthTokenPayload;
+}
+
 export async function upsertOAuthToken(userId: string, payload: OAuthTokenPayload) {
   await prisma.oAuthToken.upsert({
     where: { userId_provider: { userId, provider: "google" } },
@@ -61,17 +79,36 @@ export async function upsertOAuthToken(userId: string, payload: OAuthTokenPayloa
 }
 
 export async function getYouTubeClientForUser(userId: string) {
-  const credentials = await getStoredToken(userId);
-  if (!credentials?.accessToken) {
-    throw new Error("Missing YouTube OAuth credentials");
+  // Try to get credentials from database first
+  let credentials = await getStoredToken(userId);
+
+  // If not found in database, try environment variable as fallback
+  if (!credentials) {
+    console.log("[YouTube] No tokens found in database, trying environment variable...");
+    credentials = await getTokenFromEnv();
+  }
+
+  // If still no credentials, throw error
+  if (!credentials?.refreshToken) {
+    throw new Error("Missing YouTube OAuth credentials. Please login or set YOUTUBE_OAUTH_REFRESH_TOKEN.");
   }
 
   const client = await buildOAuthClient();
-  client.setCredentials({
-    access_token: credentials.accessToken,
-    refresh_token: credentials.refreshToken ?? undefined,
-    expiry_date: credentials.expiryDate?.getTime()
-  });
+
+  // If we have an access token, use it. Otherwise, just set refresh token
+  if (credentials.accessToken) {
+    client.setCredentials({
+      access_token: credentials.accessToken,
+      refresh_token: credentials.refreshToken ?? undefined,
+      expiry_date: credentials.expiryDate?.getTime()
+    });
+  } else {
+    // Only refresh token available (from env), set it and let Google API refresh it
+    console.log("[YouTube] Using refresh token from environment variable");
+    client.setCredentials({
+      refresh_token: credentials.refreshToken
+    });
+  }
 
   return google.youtube({ version: "v3", auth: client });
 }
