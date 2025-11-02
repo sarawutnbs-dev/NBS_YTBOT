@@ -8,6 +8,11 @@ const updateSchema = z.object({
   reply: z.string().min(1)
 });
 
+const patchSchema = z.object({
+  status: z.enum(["PENDING", "APPROVED", "REJECTED", "POSTED"]).optional(),
+  reply: z.string().min(1).optional(),
+});
+
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const session = await getServerAuthSession() as AppSession | null;
   assert(isAllowedUser, session, "Forbidden");
@@ -21,6 +26,21 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       reply: input.reply,
       status: "PENDING"
     }
+  });
+
+  return NextResponse.json(draft);
+}
+
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  const session = await getServerAuthSession() as AppSession | null;
+  assert(isAllowedUser, session, "Forbidden");
+
+  const body = await request.json();
+  const input = patchSchema.parse(body);
+
+  const draft = await prisma.draft.update({
+    where: { id: params.id },
+    data: input,
   });
 
   return NextResponse.json(draft);

@@ -1,5 +1,5 @@
-import CommentTable from "./CommentTable.client";
+import GroupedCommentTable from "./GroupedCommentTable.client";
 
 export default function ModerationPage() {
-  return <CommentTable />;
+  return <GroupedCommentTable />;
 }
