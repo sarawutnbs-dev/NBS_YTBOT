@@ -47,6 +47,7 @@ model Product {
   commission    Float?
   productLink   String?
   shopeeProductId String?       @unique
+  shortURL      String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   drafts        DraftProduct[]

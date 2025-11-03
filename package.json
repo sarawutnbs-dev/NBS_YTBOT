@@ -12,7 +12,8 @@
     "rag:test": "tsx test-rag-system.ts",
     "rag:ingest:comments": "tsx jobs/ingest-comments.ts",
     "rag:ingest:transcripts": "tsx jobs/ingest-transcripts.ts",
-    "rag:ingest:products": "tsx jobs/ingest-products.ts"
+    "rag:ingest:products": "tsx jobs/ingest-products.ts",
+    "shortlink:sync": "tsx jobs/sync-shortlinks.ts"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",

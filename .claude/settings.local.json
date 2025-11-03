@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma generate:*)",
+      "Bash(npm run studio:*)",
+      "Bash(cat:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: URL shortener service with Go, MySQL and Redis\n\nThis is a URL shortening service built with Go that provides:\n- URL shortening with custom or auto-generated short codes\n- Redis caching for fast redirects\n- MySQL for persistent storage\n- Docker support for easy deployment\n- RESTful API endpoints\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git config:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma db push:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(curl:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add batch stats API endpoint for product ID lookup\n\n- Add POST /api/batch-stats endpoint\n- Support bulk retrieval of shortlinks by product IDs\n- Return map of product_id -> short_url\n- Use BASE_URL from environment variable\n- Integration with NBS_YTBOT for batch processing\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(npx prisma migrate reset:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(npm run shortlink:sync:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(pkill:*)",
+      "Bash(docker exec:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
