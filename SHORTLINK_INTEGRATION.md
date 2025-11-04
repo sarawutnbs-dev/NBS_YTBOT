@@ -47,10 +47,19 @@ docker-compose logs -f app
 
 ### 2. Configure NBS_YTBOT
 
-The following environment variables are already configured in `.env.local`:
+Add these variables to `.env.local`:
 
 ```env
-SHORTLINK_API_URL="http://localhost:8080"
+# shortLink service base URL (production)
+SHORTLINK_API_URL="https://nbsi.me"
+
+# Shopee affiliate ID
+SHORTLINK_AFFILIATE_ID="15175090000"
+
+# Optional tuning
+SHORTLINK_BATCH_SIZE="1000"
+SHORTLINK_DELAY_MINUTES="5"
+SHORTLINK_DRY_RUN="false"
 ```
 
 ### 3. Database Schema
@@ -98,17 +107,11 @@ npm run shortlink:sync
 
 5. **Fetches results** via `POST /api/batch-stats` with product IDs
 
-6. **Updates database** with shortURLs in format: `http://localhost:8080/{code}`
+6. **Updates database** with shortURLs in format: `https://nbsi.me/{code}`
 
 ### Script Configuration
 
-Edit `jobs/sync-shortlinks.ts` to modify:
-
-```typescript
-const BATCH_SIZE = 1000;        // Products per batch
-const DELAY_MINUTES = 5;         // Wait time between send and fetch
-const AFFILIATE_ID = '15175090000'; // Shopee affiliate ID
-```
+Use environment variables (above) to change batch size, delay, and affiliate ID. You no longer need to edit the TypeScript file.
 
 ## API Endpoints
 
@@ -165,7 +168,7 @@ Test the shortLink service directly:
 
 ```bash
 # Send a test batch
-curl -X POST http://localhost:8080/api/shorten \
+curl -X POST https://nbsi.me/api/shorten \
   -H 'Content-Type: application/json' \
   -d '{
     "items": [
@@ -179,21 +182,21 @@ curl -X POST http://localhost:8080/api/shorten \
 # Wait 5-10 seconds for processing
 
 # Fetch results
-curl -X POST http://localhost:8080/api/batch-stats \
+curl -X POST https://nbsi.me/api/batch-stats \
   -H 'Content-Type: application/json' \
   -d '{
     "product_ids": ["test_123"]
   }'
 
 # Expected response:
-# {"test_123":"http://localhost:8080/abc1"}
+# {"test_123":"https://nbsi.me/abc1"}
 ```
 
 ### 2. Test Redirect
 
 ```bash
 # Get the short code from the response above (e.g., abc1)
-curl -I http://localhost:8080/abc1
+curl -I https://nbsi.me/abc1
 
 # Should return 302 redirect to the original Shopee URL
 ```
@@ -218,7 +221,7 @@ Starting ShortLink Sync
 Config:
   - Batch Size: 1000
   - Delay: 5 minutes
-  - ShortLink API: http://localhost:8080
+  - ShortLink API: https://nbsi.me
   - Affiliate ID: 15175090000
 
 📊 Found X products to process

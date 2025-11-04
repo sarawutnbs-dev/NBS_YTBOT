@@ -9,16 +9,26 @@
  * 5. Fetches results and updates products with shortURL
  */
 
+import dotenv from 'dotenv';
+// Prefer .env.local if present, then fallback to .env
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
 
 const prisma = new PrismaClient();
 
-// Configuration
-const BATCH_SIZE = 1000;
-const DELAY_MINUTES = 5;
-const SHORTLINK_API_URL = process.env.SHORTLINK_API_URL || 'http://localhost:8080';
-const AFFILIATE_ID = '15175090000';
+// Configuration (override via env)
+const BATCH_SIZE = Number(process.env.SHORTLINK_BATCH_SIZE || 1000);
+// Allow overriding delay via minutes or seconds (seconds win if provided)
+const delaySecondsEnv = process.env.SHORTLINK_DELAY_SECONDS;
+const delayMinutesEnv = process.env.SHORTLINK_DELAY_MINUTES;
+const DELAY_MINUTES = delaySecondsEnv != null
+  ? Number(delaySecondsEnv) / 60
+  : Number(delayMinutesEnv || 5);
+const SHORTLINK_API_URL = process.env.SHORTLINK_API_URL || 'https://nbsi.me';
+const AFFILIATE_ID = process.env.SHORTLINK_AFFILIATE_ID || '15175090000';
+const DRY_RUN = (process.env.SHORTLINK_DRY_RUN || '').toLowerCase() === 'true';
 
 interface ProductToShorten {
   shopeeProductId: string;
@@ -34,7 +44,9 @@ interface ShortenItem {
  * Transform productLink to affiliate redirect URL
  */
 function transformToAffiliateUrl(productLink: string): string {
-  return `https://s.shopee.co.th/an_redir?origin_link=${productLink}?&affiliate_id=${AFFILIATE_ID}`;
+  // Ensure origin_link is URL-encoded and avoid duplicate query glue
+  const encodedOrigin = encodeURIComponent(productLink);
+  return `https://s.shopee.co.th/an_redir?origin_link=${encodedOrigin}&affiliate_id=${AFFILIATE_ID}`;
 }
 
 /**
@@ -54,6 +66,14 @@ async function sendBatchToShortLink(products: ProductToShorten[]): Promise<numbe
   }));
 
   try {
+    if (DRY_RUN) {
+      console.log(`(DRY RUN) Would send ${items.length} products to shortLink service`);
+      if (items.length > 0) {
+        console.log(`(DRY RUN) Example payload:`, items.slice(0, 3));
+      }
+      return items.length;
+    }
+
     const response = await axios.post(`${SHORTLINK_API_URL}/api/shorten`, {
       items
     });
@@ -77,6 +97,11 @@ async function sendBatchToShortLink(products: ProductToShorten[]): Promise<numbe
  */
 async function fetchShortUrls(productIds: string[]): Promise<Record<string, string>> {
   try {
+    if (DRY_RUN) {
+      console.log(`(DRY RUN) Would fetch short URLs for ${productIds.length} products`);
+      return {};
+    }
+
     const response = await axios.post(`${SHORTLINK_API_URL}/api/batch-stats`, {
       product_ids: productIds
     });
@@ -102,6 +127,12 @@ async function updateProductsWithShortUrls(shortUrls: Record<string, string>): P
 
   for (const [shopeeProductId, shortURL] of Object.entries(shortUrls)) {
     try {
+      if (DRY_RUN) {
+        console.log(`(DRY RUN) Would update product ${shopeeProductId} with shortURL=${shortURL}`);
+        updated++;
+        continue;
+      }
+
       await prisma.product.update({
         where: { shopeeProductId },
         data: { shortURL }
@@ -119,15 +150,16 @@ async function updateProductsWithShortUrls(shortUrls: Record<string, string>): P
 /**
  * Main sync function
  */
-async function syncShortLinks() {
+export async function syncShortLinks() {
   console.log('========================================');
   console.log('Starting ShortLink Sync');
   console.log('========================================');
   console.log(`Config:`);
   console.log(`  - Batch Size: ${BATCH_SIZE}`);
-  console.log(`  - Delay: ${DELAY_MINUTES} minutes`);
+  console.log(`  - Delay: ${DELAY_MINUTES} minutes (${(DELAY_MINUTES*60).toFixed(0)} seconds)`);
   console.log(`  - ShortLink API: ${SHORTLINK_API_URL}`);
   console.log(`  - Affiliate ID: ${AFFILIATE_ID}`);
+  console.log(`  - Dry Run: ${DRY_RUN}`);
   console.log('');
 
   try {
@@ -183,8 +215,12 @@ async function syncShortLinks() {
       // Send to shortLink service
       const queued = await sendBatchToShortLink(validProducts);
 
-      console.log(`⏳ Waiting ${DELAY_MINUTES} minutes for processing...`);
-      await delay(DELAY_MINUTES);
+      if (!DRY_RUN) {
+        console.log(`⏳ Waiting ${DELAY_MINUTES} minutes for processing...`);
+        await delay(DELAY_MINUTES);
+      } else {
+        console.log(`(DRY RUN) Skipping wait of ${DELAY_MINUTES} minutes`);
+      }
 
       // Fetch results
       const productIds = validProducts.map(p => p.shopeeProductId);
@@ -216,13 +252,15 @@ async function syncShortLinks() {
   }
 }
 
-// Run the sync
-syncShortLinks()
-  .then(() => {
-    console.log('\n✓ Script completed successfully');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('\n✗ Script failed:', error);
-    process.exit(1);
-  });
+// Allow running as a standalone CLI
+if (require.main === module) {
+  syncShortLinks()
+    .then(() => {
+      console.log('\n✓ Script completed successfully');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('\n✗ Script failed:', error);
+      process.exit(1);
+    });
+}

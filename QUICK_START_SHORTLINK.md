@@ -52,7 +52,6 @@ Config:
 
 📊 Found X products to process
 
---- Batch 1 ---
 📦 Processing X products...
 ✓ Sent X products to shortLink service
   Response: { message: 'Enqueued for shortening', queued: X }
@@ -74,7 +73,7 @@ Config:
 ### Test API Endpoint
 ```bash
 # Send test batch
-curl -X POST http://localhost:8080/api/shorten \
+curl -X POST https://nbsi.me/api/shorten \
   -H 'Content-Type: application/json' \
   -d '{
     "items": [
@@ -88,7 +87,7 @@ curl -X POST http://localhost:8080/api/shorten \
 # Wait 10 seconds
 
 # Get results
-curl -X POST http://localhost:8080/api/batch-stats \
+curl -X POST https://nbsi.me/api/batch-stats \
   -H 'Content-Type: application/json' \
   -d '{"product_ids": ["test_123"]}'
 ```
@@ -101,7 +100,7 @@ curl -X POST http://localhost:8080/api/batch-stats \
 ### Test Redirect
 ```bash
 # Copy the short code from response (e.g., abc1)
-curl -L http://localhost:8080/abc1
+curl -L https://nbsi.me/abc1
 # Should redirect to Shopee page
 ```
 
@@ -118,13 +117,21 @@ npm run studio
 
 ## Configuration
 
-### Change Batch Size or Delay
+### Change Batch Size, Delay, Affiliate ID
 
-Edit [jobs/sync-shortlinks.ts](jobs/sync-shortlinks.ts):
+Configure via environment variables (recommended). Update `.env.local`:
 
-```typescript
-const BATCH_SIZE = 1000;        // Products per batch
-const DELAY_MINUTES = 5;         // Wait time between send and fetch
+```env
+# shortLink service base URL
+SHORTLINK_API_URL="https://nbsi.me"
+
+# Shopee affiliate ID
+SHORTLINK_AFFILIATE_ID="15175090000"
+
+# Sync behavior
+SHORTLINK_BATCH_SIZE="1000"         # Products per batch
+SHORTLINK_DELAY_MINUTES="5"         # Minutes to wait between enqueue and fetch
+SHORTLINK_DRY_RUN="false"           # Set to true to preview without external calls/DB updates
 ```
 
 ### Change API URL (for production)
@@ -191,16 +198,8 @@ docker-compose logs -f app
 ## Files Summary
 
 ### NBS_YTBOT (Modified/Created)
-- ✅ `prisma/schema.prisma` - Added `shortURL` field
-- ✅ `jobs/sync-shortlinks.ts` - Sync script
-- ✅ `package.json` - Added `shortlink:sync` command
-- ✅ `.env.local` - Added `SHORTLINK_API_URL`
-- ✅ `SHORTLINK_INTEGRATION.md` - Full documentation
-- ✅ `QUICK_START_SHORTLINK.md` - This guide
 
 ### shortLink (Modified)
-- ✅ `main.go` - Added `/api/batch-stats` endpoint
-- ✅ `.env.local` - Added `BASE_URL`
 
 ## URL Format Examples
 
@@ -211,7 +210,7 @@ https://shopee.co.th/product/81421161/9976411954
 
 ### After Transformation (sent to shortLink):
 ```
-https://s.shopee.co.th/an_redir?origin_link=https://shopee.co.th/product/81421161/9976411954?&affiliate_id=15175090000
+https://s.shopee.co.th/an_redir?origin_link=https://shopee.co.th/product/81421161/9976411954&affiliate_id=15175090000
 ```
 
 ### Final Short URL (stored in database):

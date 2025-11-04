@@ -8,11 +8,15 @@ import { google } from "googleapis";
 import { prisma } from "./lib/db";
 import dotenv from "dotenv";
 
-dotenv.config({ path: ".env.local" });
+// Load .env first, then override with .env.local
+dotenv.config({ path: ".env" });
+dotenv.config({ path: ".env.local", override: true });
 
 async function testYouTubeReply() {
   console.log("\n🧪 Testing YouTube Comment Reply with Refresh Token\n");
   console.log("=".repeat(80));
+
+  const shouldPost = process.env.POST_TO_YOUTUBE === "1" || process.argv.includes("--post");
 
   // Check environment variables
   console.log("\n🔑 Environment Variables:");
@@ -80,6 +84,13 @@ async function testYouTubeReply() {
     console.log(`   Scope: ${credentials.scope}`);
     console.log("");
 
+    oauth2Client.setCredentials({
+      refresh_token: process.env.YOUTUBE_OAUTH_REFRESH_TOKEN,
+      access_token: credentials.access_token || undefined,
+      scope: credentials.scope,
+      expiry_date: credentials.expiry_date
+    });
+
     // Check if YouTube scope is included
     if (!credentials.scope?.includes('youtube')) {
       console.error("❌ YouTube scope not found in token!");
@@ -93,49 +104,72 @@ async function testYouTubeReply() {
     // Create YouTube client
     const youtube = google.youtube({ version: "v3", auth: oauth2Client });
 
+    const channelInfo = await youtube.channels.list({ part: ["id", "snippet"], mine: true });
+    const channelName = channelInfo.data.items?.[0]?.snippet?.title;
+    const channelId = channelInfo.data.items?.[0]?.id;
+    if (!channelInfo.data.items?.length) {
+      console.warn("⚠️  No channels found for the authenticated account. Replies will likely fail.");
+    } else {
+      console.log(`✅ Authenticated as channel: ${channelName || "(unknown)"} (${channelId})`);
+    }
+
     // Ask user for confirmation
     console.log("=".repeat(80));
-    console.log("\n⚠️  WARNING: This will POST A REAL REPLY to YouTube!\n");
-    console.log("Reply text:");
-    console.log(`"${comment.draft.reply}"`);
-    console.log("");
-    console.log("To comment:");
-    console.log(`"${comment.textOriginal}"`);
-    console.log("");
-    console.log("=".repeat(80));
-    console.log("\n💡 To proceed, uncomment the line that posts the reply in the script\n");
-    console.log("   Current status: DRY RUN (will not actually post)\n");
+    if (!shouldPost) {
+      console.log("\n⚠️  WARNING: This will POST A REAL REPLY to YouTube if enabled!\n");
+      console.log("Reply text:");
+      console.log(`"${comment.draft.reply}"`);
+      console.log("");
+      console.log("To comment:");
+      console.log(`"${comment.textOriginal}"`);
+      console.log("");
+      console.log("=".repeat(80));
+      console.log("\n💡 Dry run only. Re-run with POST_TO_YOUTUBE=1 or --post to actually publish.\n");
+    } else {
+      console.log("\n📤 Posting reply to YouTube...\n");
 
-    // UNCOMMENT THE LINES BELOW TO ACTUALLY POST THE REPLY
-    /*
-    console.log("📤 Posting reply to YouTube...\n");
+      try {
+        const response = await youtube.comments.insert({
+          part: ["snippet"],
+          requestBody: {
+            snippet: {
+              parentId: comment.commentId,
+              textOriginal: comment.draft.reply!
+            }
+          }
+        });
 
-    const response = await youtube.comments.insert({
-      part: ["snippet"],
-      requestBody: {
-        snippet: {
-          parentId: comment.commentId,
-          textOriginal: comment.draft.reply!
+        // Check if response is successful (has an ID)
+        if (!response.data.id) {
+          throw new Error("YouTube API did not return a comment ID - post may have failed");
         }
+
+        console.log("✅ SUCCESS! Reply posted to YouTube");
+        console.log(`   YouTube Reply ID: ${response.data.id}`);
+        console.log(`   Published at: ${response.data.snippet?.publishedAt}`);
+        console.log("");
+
+        // Only update status if post was successful
+        await prisma.draft.update({
+          where: { id: comment.draft.id },
+          data: {
+            status: "POSTED",
+            postedAt: new Date()
+          }
+        });
+
+        console.log("✅ Draft status updated to POSTED in database\n");
+
+      } catch (postError: any) {
+        console.error("\n❌ Failed to post reply to YouTube:");
+        console.error("   Error:", postError.message);
+        if (postError.response?.data) {
+          console.error("   API Response:", JSON.stringify(postError.response.data, null, 2));
+        }
+        console.log("\n⚠️  Draft status remains PENDING (not changed to POSTED)\n");
+        throw postError;
       }
-    });
-
-    console.log("✅ SUCCESS! Reply posted to YouTube");
-    console.log(`   YouTube Reply ID: ${response.data.id}`);
-    console.log(`   Published at: ${response.data.snippet?.publishedAt}`);
-    console.log("");
-
-    // Update draft status to POSTED
-    await prisma.draft.update({
-      where: { id: comment.draft.id },
-      data: {
-        status: "POSTED",
-        postedAt: new Date()
-      }
-    });
-
-    console.log("✅ Draft status updated to POSTED in database\n");
-    */
+    }
 
     console.log("=".repeat(80));
     console.log("\n🎉 TEST COMPLETED SUCCESSFULLY!\n");
@@ -144,8 +178,11 @@ async function testYouTubeReply() {
     console.log("✅ YouTube scope is present");
     console.log("✅ OAuth2 client is working correctly");
     console.log("");
-    console.log("💡 The refresh token can be used to post comments!");
-    console.log("   To actually post, uncomment the code in the script.\n");
+    if (shouldPost) {
+      console.log("💡 Reply was posted to YouTube and draft marked POSTED.\n");
+    } else {
+      console.log("💡 The refresh token can be used to post comments. Re-run with POST_TO_YOUTUBE=1 or --post to publish.\n");
+    }
 
   } catch (error: any) {
     console.error("\n❌ Error during test:");

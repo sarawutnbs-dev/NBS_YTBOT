@@ -59,14 +59,20 @@ async function getTokenFromEnv() {
 }
 
 export async function upsertOAuthToken(userId: string, payload: OAuthTokenPayload) {
+  // Build update object and only overwrite refreshToken if explicitly provided
+  const updateData: any = {
+    accessToken: payload.accessToken,
+    expiresAt: payload.expiryDate ?? null,
+    scope: payload.scope ?? null
+  };
+
+  if (payload.refreshToken !== undefined) {
+    updateData.refreshToken = payload.refreshToken ? encryptSecret(payload.refreshToken) : null;
+  }
+
   await prisma.oAuthToken.upsert({
     where: { userId_provider: { userId, provider: "google" } },
-    update: {
-      accessToken: payload.accessToken,
-      refreshToken: payload.refreshToken ? encryptSecret(payload.refreshToken) : null,
-      expiresAt: payload.expiryDate ?? null,
-      scope: payload.scope ?? null
-    },
+    update: updateData,
     create: {
       userId,
       provider: "google",

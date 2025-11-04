@@ -17,6 +17,11 @@ export async function postReply(draftId: string, userId: string) {
     text: draft.reply
   });
 
+  // Only update status to POSTED if the YouTube API response is successful
+  if (!response || !response.id) {
+    throw new Error("YouTube API did not return a valid response - reply may not have been posted");
+  }
+
   await prisma.draft.update({
     where: { id: draft.id },
     data: {

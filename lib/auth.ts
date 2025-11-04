@@ -102,14 +102,18 @@ export const authOptions: NextAuthOptions = {
       // Store OAuth tokens in JWT
       if (account) {
         token.accessToken = account.access_token;
-        token.refreshToken = account.refresh_token;
+        // Only set refreshToken if Google provided it; otherwise keep existing
+        if (typeof account.refresh_token !== 'undefined') {
+          token.refreshToken = account.refresh_token as any;
+        }
 
         // Also store tokens in database for YouTube API with automatic refresh
         if (token.id && account.access_token) {
           console.log("[Auth] 💾 Storing OAuth tokens in database");
           await upsertOAuthToken(token.id as string, {
             accessToken: account.access_token,
-            refreshToken: account.refresh_token ?? null,
+            // Only overwrite refresh token if provided; keep previous otherwise
+            refreshToken: typeof account.refresh_token !== 'undefined' ? (account.refresh_token ?? null) : undefined,
             expiryDate: account.expires_at ? new Date(account.expires_at * 1000) : null,
             scope: account.scope ?? null
           });

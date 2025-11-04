@@ -3,6 +3,17 @@ import { generateDraftsBatch } from "@/lib/ai";
 import { getPreview } from "@/lib/videoIndexService";
 import { IndexStatus } from "@prisma/client";
 
+// Batching and trimming to avoid token overflows
+const MAX_COMMENTS_PER_CALL = Number(process.env.AI_MAX_COMMENTS_PER_CALL || 25);
+const MAX_PRODUCTS = Number(process.env.AI_MAX_PRODUCTS || 20);
+const MAX_TRANSCRIPT_CHUNKS = Number(process.env.AI_MAX_TRANSCRIPT_CHUNKS || 200);
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 export async function generateDraftsForComments() {
   // 1. ดึง comments ที่ยังไม่มี draft
   const comments = await prisma.comment.findMany({
@@ -78,51 +89,53 @@ export async function generateDraftsForComments() {
         continue;
       }
 
-      // 7. ส่งให้ AI ทำงาน
-      console.log(`[draftService] Processing ${videoComments.length} comments for video ${videoId}`);
+      // 7. ตัดข้อมูลให้พอดี token และส่งให้ AI แบบแบ่ง batch
+      const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
+        name: p.name,
+        affiliateUrl: p.affiliateUrl,
+        price: p.price
+      }));
+      const trimmedChunks = preview.chunks.slice(0, MAX_TRANSCRIPT_CHUNKS);
 
-      const aiResponse = await generateDraftsBatch({
-        videoId,
-        comments: videoComments.map(c => ({
-          commentId: c.id,
-          text: c.textOriginal
-        })),
-        products: products.map(p => ({
-          name: p.name,
-          affiliateUrl: p.affiliateUrl,
-          price: p.price
-        })),
-        transcript: {
-          chunks: preview.chunks
-        }
-      });
+      console.log(`[draftService] Processing ${videoComments.length} comments for video ${videoId} in batches of ${MAX_COMMENTS_PER_CALL}`);
+      const commentBatches = chunkArray(videoComments, MAX_COMMENTS_PER_CALL);
 
-      // 8. บันทึก drafts ลงฐานข้อมูล
-      for (const draft of aiResponse.drafts) {
-        await prisma.draft.upsert({
-          where: { commentId: draft.commentId },
-          update: {
-            reply: draft.reply,
-            status: "PENDING",
-            suggestedProducts: JSON.stringify(draft.suggestedProducts),
-            engagementScore: draft.scores.engagement,
-            relevanceScore: draft.scores.relevance
-          },
-          create: {
-            commentId: draft.commentId,
-            reply: draft.reply,
-            status: "PENDING",
-            suggestedProducts: JSON.stringify(draft.suggestedProducts),
-            engagementScore: draft.scores.engagement,
-            relevanceScore: draft.scores.relevance
-          }
+      for (let i = 0; i < commentBatches.length; i++) {
+        const batch = commentBatches[i];
+        console.log(`[draftService] \tBatch ${i + 1}/${commentBatches.length} with ${batch.length} comments`);
+
+        const aiResponse = await generateDraftsBatch({
+          videoId,
+          comments: batch.map(c => ({ commentId: c.id, text: c.textOriginal })),
+          products: trimmedProducts,
+          transcript: { chunks: trimmedChunks }
         });
 
-        generatedDrafts++;
+        for (const draft of aiResponse.drafts) {
+          await prisma.draft.upsert({
+            where: { commentId: draft.commentId },
+            update: {
+              reply: draft.reply,
+              status: "PENDING",
+              suggestedProducts: JSON.stringify(draft.suggestedProducts),
+              engagementScore: draft.scores.engagement,
+              relevanceScore: draft.scores.relevance
+            },
+            create: {
+              commentId: draft.commentId,
+              reply: draft.reply,
+              status: "PENDING",
+              suggestedProducts: JSON.stringify(draft.suggestedProducts),
+              engagementScore: draft.scores.engagement,
+              relevanceScore: draft.scores.relevance
+            }
+          });
+          generatedDrafts++;
+        }
       }
 
-      processedVideos++;
-      console.log(`[draftService] ✅ Generated ${aiResponse.drafts.length} drafts for video ${videoId}`);
+  processedVideos++;
+  console.log(`[draftService] ✅ Generated ${generatedDrafts} drafts so far for video ${videoId}`);
 
     } catch (error) {
       console.error(`[draftService] ❌ Error processing video ${videoId}:`, error);
@@ -196,52 +209,58 @@ export async function generateDraftsForVideo(videoId: string) {
     throw new Error(`No products found with tags matching video tags: ${videoTags.join(', ')}`);
   }
 
-  // 5. ส่งให้ AI ทำงาน
-  console.log(`[draftService] Processing ${comments.length} comments for video ${videoId}`);
+  // 5. ตัดข้อมูลให้พอดี token
+  const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
+    name: p.name,
+    affiliateUrl: p.affiliateUrl,
+    price: p.price
+  }));
+  const trimmedChunks = preview.chunks.slice(0, MAX_TRANSCRIPT_CHUNKS);
 
-  const aiResponse = await generateDraftsBatch({
-    videoId,
-    comments: comments.map(c => ({
-      commentId: c.id,
-      text: c.textOriginal
-    })),
-    products: products.map(p => ({
-      name: p.name,
-      affiliateUrl: p.affiliateUrl,
-      price: p.price
-    })),
-    transcript: {
-      chunks: preview.chunks
-    }
-  });
+  // 6. ส่งให้ AI ทำงานแบบแบ่ง batch ตามจำนวนคอมเมนต์
+  console.log(`[draftService] Processing ${comments.length} comments for video ${videoId} in batches of ${MAX_COMMENTS_PER_CALL}`);
+  const commentBatches = chunkArray(comments, MAX_COMMENTS_PER_CALL);
+  let totalDrafts = 0;
 
-  // 6. บันทึก drafts ลงฐานข้อมูล
-  for (const draft of aiResponse.drafts) {
-    await prisma.draft.upsert({
-      where: { commentId: draft.commentId },
-      update: {
-        reply: draft.reply,
-        status: "PENDING",
-        suggestedProducts: JSON.stringify(draft.suggestedProducts),
-        engagementScore: draft.scores.engagement,
-        relevanceScore: draft.scores.relevance
-      },
-      create: {
-        commentId: draft.commentId,
-        reply: draft.reply,
-        status: "PENDING",
-        suggestedProducts: JSON.stringify(draft.suggestedProducts),
-        engagementScore: draft.scores.engagement,
-        relevanceScore: draft.scores.relevance
-      }
+  for (let i = 0; i < commentBatches.length; i++) {
+    const batch = commentBatches[i];
+    console.log(`[draftService] \tBatch ${i + 1}/${commentBatches.length} with ${batch.length} comments`);
+
+    const aiResponse = await generateDraftsBatch({
+      videoId,
+      comments: batch.map(c => ({ commentId: c.id, text: c.textOriginal })),
+      products: trimmedProducts,
+      transcript: { chunks: trimmedChunks }
     });
+
+    for (const draft of aiResponse.drafts) {
+      await prisma.draft.upsert({
+        where: { commentId: draft.commentId },
+        update: {
+          reply: draft.reply,
+          status: "PENDING",
+          suggestedProducts: JSON.stringify(draft.suggestedProducts),
+          engagementScore: draft.scores.engagement,
+          relevanceScore: draft.scores.relevance
+        },
+        create: {
+          commentId: draft.commentId,
+          reply: draft.reply,
+          status: "PENDING",
+          suggestedProducts: JSON.stringify(draft.suggestedProducts),
+          engagementScore: draft.scores.engagement,
+          relevanceScore: draft.scores.relevance
+        }
+      });
+      totalDrafts++;
+    }
   }
 
-  console.log(`[draftService] ✅ Generated ${aiResponse.drafts.length} drafts for video ${videoId}`);
+  console.log(`[draftService] ✅ Generated ${totalDrafts} drafts for video ${videoId}`);
 
   return {
     success: true,
-    message: `Generated ${aiResponse.drafts.length} draft(s) for video ${videoId}`,
-    generatedDrafts: aiResponse.drafts.length
+    message: `Generated ${totalDrafts} draft(s) for video ${videoId}`,
+    generatedDrafts: totalDrafts
   };
 }

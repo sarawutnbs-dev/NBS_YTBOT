@@ -13,7 +13,12 @@
     "rag:ingest:comments": "tsx jobs/ingest-comments.ts",
     "rag:ingest:transcripts": "tsx jobs/ingest-transcripts.ts",
     "rag:ingest:products": "tsx jobs/ingest-products.ts",
-    "shortlink:sync": "tsx jobs/sync-shortlinks.ts"
+    "shortlink:sync": "tsx jobs/sync-shortlinks.ts",
+    "shortlink:post-fetch": "tsx jobs/after-shopee-fetch.ts",
+    "shortlink:audit": "tsx jobs/audit-shortlinks.ts",
+    "youtube:upsert-token": "tsx scripts/upsert-youtube-token.ts",
+    "youtube:post-one-reply": "tsx scripts/post-one-reply.ts",
+    "youtube:post-one-reply:env": "tsx scripts/post-one-reply-env.ts"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",

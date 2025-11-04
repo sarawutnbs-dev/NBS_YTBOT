@@ -1,4 +1,5 @@
 import { hybridSearch, SearchResult } from "./retriever";
+import { smartHybridSearch } from "./retriever-v2";
 import { chatCompletion, getChatModelInfo } from "./openai";
 import { estimateContextCost, truncateContexts, countTokens } from "./tokenizer";
 import { AnswerRequest, AnswerResponse } from "./schema";
@@ -35,34 +36,18 @@ export async function generateAnswer(
     maxTokens,
   } = request;
 
-  // Determine which source types to search
-  const sourceTypes: Array<"comment" | "transcript" | "product"> = [];
-  if (includeComments) sourceTypes.push("comment");
-  if (includeTranscripts) sourceTypes.push("transcript");
-  if (includeProducts) sourceTypes.push("product");
-
-  if (sourceTypes.length === 0) {
-    throw new Error("At least one source type must be enabled");
-  }
-
-  // Search for relevant contexts from each source type
-  const searchPromises = sourceTypes.map((sourceType) =>
-    hybridSearch(query, {
-      topK: Math.ceil(6 / sourceTypes.length), // Distribute topK across source types
-      sourceType,
-      videoId: sourceType !== "product" ? videoId : undefined, // Products are global
-      minScore: 0.3, // Filter low-relevance results
-    })
-  );
-
-  const searchResults = await Promise.all(searchPromises);
-  const allContexts = searchResults.flat();
-
-  // Sort by score and take top K
+  // Use smart hybrid search (auto-selects two-stage if metadata available)
   const topK = parseInt(process.env.RAG_TOP_K || "6");
-  const topContexts = allContexts
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+
+  console.log(`[answer] Using smartHybridSearch for video ${videoId}...`);
+
+  const topContexts = await smartHybridSearch(query, videoId || "", {
+    topK,
+    includeTranscripts,
+    includeProducts,
+  });
+
+  console.log(`[answer] Retrieved ${topContexts.length} contexts (top score: ${topContexts[0]?.score.toFixed(3) || 'N/A'})`);
 
   if (topContexts.length === 0) {
     // No relevant context found

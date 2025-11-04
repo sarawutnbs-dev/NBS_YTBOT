@@ -24,7 +24,14 @@
       "Bash(docker-compose logs:*)",
       "Bash(pkill:*)",
       "Bash(docker exec:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(tsx:*)",
+      "Bash(npx tsx:*)",
+      "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(npx tsc:*)",
+      "Bash(npx prisma studio:*)",
+      "Bash(timeout 5 bash:*)",
+      "Bash(powershell -Command \"Get-Process prisma,node 2>$null | Select-Object Id,ProcessName,StartTime | Format-Table\")"
     ],
     "deny": [],
     "ask": []

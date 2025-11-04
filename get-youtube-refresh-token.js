@@ -19,7 +19,15 @@ const http = require('http');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
+const { PrismaClient } = require('@prisma/client');
+const crypto = require('crypto');
 require('dotenv').config();
+
+// Load .env.local if present (overrides defaults)
+const envLocalPath = path.join(__dirname, '.env.local');
+if (fs.existsSync(envLocalPath)) {
+  require('dotenv').config({ path: envLocalPath });
+}
 
 // ============================================================================
 // STEP 1: Configuration
@@ -55,6 +63,123 @@ const oauth2Client = new google.auth.OAuth2(
   CLIENT_SECRET,
   REDIRECT_URI
 );
+
+function ensureTokenKey() {
+  if (!process.env.TOKEN_ENCRYPTION_KEY) {
+    throw new Error('TOKEN_ENCRYPTION_KEY is required to encrypt refresh tokens');
+  }
+  return crypto.createHash('sha256').update(process.env.TOKEN_ENCRYPTION_KEY).digest();
+}
+
+function encryptRefreshToken(refreshToken) {
+  const key = ensureTokenKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(refreshToken, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]).toString('base64');
+}
+
+async function upsertRefreshTokenInDb(tokens) {
+  if (!tokens.refresh_token) {
+    console.log('\n⚠️  Skipping DB update because refresh token is missing');
+    return;
+  }
+
+  console.log('\n================================================================================');
+  console.log('STEP 4: Update Refresh Token in Database');
+  console.log('================================================================================\n');
+
+  const prisma = new PrismaClient();
+
+  try {
+    const users = await prisma.user.findMany({
+      where: { allowed: true },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    if (!users.length) {
+      throw new Error('No allowed users found in database. Add an allowed user first.');
+    }
+
+    const targetUser = users[0];
+    console.log(`👥 Using user: ${targetUser.email} (${targetUser.id})`);
+
+    const oauthClient = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
+    oauthClient.setCredentials({ refresh_token: tokens.refresh_token });
+
+    const accessTokenResponse = await oauthClient.getAccessToken();
+    const accessToken = typeof accessTokenResponse === 'string'
+      ? accessTokenResponse
+      : accessTokenResponse?.token;
+
+    if (!accessToken) {
+      throw new Error('Failed to obtain access token from refresh token');
+    }
+
+    const tokenInfo = await oauthClient.getTokenInfo(accessToken);
+    const inferredScopes = tokenInfo.scopes || (tokenInfo.scope ? tokenInfo.scope.split(/[,\s]+/) : []);
+    const scope = inferredScopes.join(' ');
+    const expiresAt = tokens.expiry_date
+      ? new Date(tokens.expiry_date)
+      : accessTokenResponse?.res?.data?.expiry_date
+        ? new Date(accessTokenResponse.res.data.expiry_date)
+        : new Date(Date.now() + 3600 * 1000);
+
+    if (!scope.includes('youtube')) {
+      console.warn('⚠️  WARNING: youtube scope not present in access token!');
+    }
+
+    const encryptedRefreshToken = encryptRefreshToken(tokens.refresh_token);
+
+    await prisma.oAuthToken.upsert({
+      where: {
+        userId_provider: {
+          userId: targetUser.id,
+          provider: 'google'
+        }
+      },
+      update: {
+        accessToken,
+        refreshToken: encryptedRefreshToken,
+        expiresAt,
+        scope
+      },
+      create: {
+        userId: targetUser.id,
+        provider: 'google',
+        accessToken,
+        refreshToken: encryptedRefreshToken,
+        expiresAt,
+        scope
+      }
+    });
+
+    console.log('\n✅ Refresh token stored in database');
+    console.log(`   Access Token: ${accessToken.substring(0, 20)}...`);
+    console.log(`   Scope: ${scope}`);
+    console.log(`   Expires: ${expiresAt.toISOString()}\n`);
+
+    // Quick verification call to YouTube API
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: oauthClient });
+      const channelResponse = await youtube.channels.list({ part: ['id'], mine: true });
+      const channelCount = channelResponse.data.items?.length || 0;
+      if (channelCount > 0) {
+        console.log('✅ Verified YouTube API access (channels.list)');
+      } else {
+        console.warn('⚠️  Unable to verify YouTube API access (no channels returned)');
+      }
+    } catch (verifyError) {
+      console.warn('⚠️  Warning: Failed to verify YouTube API access:', verifyError.message);
+    }
+
+    process.env.YOUTUBE_OAUTH_REFRESH_TOKEN = tokens.refresh_token;
+
+  } finally {
+    await prisma.$disconnect();
+  }
+}
 
 // ============================================================================
 // STEP 4: Generate Authorization URL
@@ -229,6 +354,13 @@ const server = http.createServer(async (req, res) => {
       console.log('   1. Restart your application to load the new environment variable');
       console.log('   2. Your app can now use the refresh token to get new access tokens');
       console.log('   3. Keep your refresh token secure and never commit it to version control\n');
+
+      try {
+        await upsertRefreshTokenInDb(tokens);
+      } catch (dbError) {
+        console.error('\n❌ Failed to update refresh token in database:', dbError.message);
+        console.error('   You can run: npx tsx scripts/update-refresh-token.ts\n');
+      }
     }
 
     // ========================================================================

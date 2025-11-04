@@ -48,9 +48,32 @@ model Product {
   productLink   String?
   shopeeProductId String?       @unique
   shortURL      String?
+  categoryName  String?
+  // Link to ShopeeCategory by its unique categoryId (Int)
+  shopeeCategoryId Int?
+  shopeeCategory   ShopeeCategory? @relation(fields: [shopeeCategoryId], references: [categoryId])
+  brand         String?         // Brand name extracted from tags
+  inStock       Boolean         @default(true)
+  hasAffiliate  Boolean         @default(true)
+  priceMin      Float?          // Price range for filtering (±10%)
+  priceMax      Float?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   drafts        DraftProduct[]
+
+  @@index([brand])
+  @@index([categoryName])
+  @@index([shopeeCategoryId])
+  @@index([inStock, hasAffiliate])
+}
+
+model ShopeeCategory {
+  id            String   @id @default(cuid())
+  categoryId    Int      @unique
+  name          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  products      Product[]
 }
 
 model Comment {
@@ -137,10 +160,30 @@ model VideoIndex {
   source       String?
   errorMessage String?
   publishedAt  DateTime?
+  categoryTags String[]    @default([])  // Categories mentioned in video
+  brandTags    String[]    @default([])  // Brands mentioned in video
+  priceRangeMin Float?                   // Min price mentioned
+  priceRangeMax Float?                   // Max price mentioned
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
   @@index([status, updatedAt])
+}
+
+// VideoProductPool: Precomputed product pools for fast retrieval
+model VideoProductPool {
+  id               String   @id @default(cuid())
+  videoId          String
+  productId        String   // Internal product ID
+  relevanceScore   Float    // Metadata match score (0-1)
+  matchedBrand     Boolean  @default(false)
+  matchedCategory  Boolean  @default(false)
+  matchedPriceRange Boolean @default(false)
+  computedAt       DateTime @default(now())
+
+  @@unique([videoId, productId])
+  @@index([videoId, relevanceScore])
+  @@index([productId])
 }
 
 // RAG Models
