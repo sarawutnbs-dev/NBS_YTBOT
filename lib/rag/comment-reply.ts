@@ -97,7 +97,7 @@ export async function generateCommentReply(
 
   // 2. Build suggested products pool (if any)
   const productContexts = contexts.filter(c => c.sourceType === "product");
-  const suggestedProducts: Array<{ id: string; name: string; url: string }> = [];
+  const suggestedProducts: Array<{ id: string; name: string; url: string; price: string }> = [];
 
   if (productContexts.length > 0) {
     // Get product details from database
@@ -120,7 +120,8 @@ export async function generateCommentReply(
         suggestedProducts.push({
           id: p.id,
           name: p.name,
-          url: p.shortURL
+          url: p.shortURL,
+          price: p.price?.toString() || ""
         });
       }
     });
@@ -144,7 +145,7 @@ export async function generateCommentReply(
   const productsText = suggestedProducts.length > 0
     ? `\n\n--- Suggested Products (แนะนำได้เฉพาะที่อยู่ในลิสต์นี้) ---\n` +
       suggestedProducts.map((p, idx) =>
-        `${idx + 1}. ID: ${p.id}\n   Name: ${p.name}\n   URL: ${p.url}`
+        `${idx + 1}. ID: ${p.id}\n   Name: ${p.name}\n   Price: ${p.price}\n   URL: ${p.url}`
       ).join("\n\n")
     : "";
 
