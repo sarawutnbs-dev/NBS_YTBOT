@@ -202,3 +202,180 @@ export function renderNotebookGuidance(pack: NotebookUseCasePack): string {
   ].filter(Boolean);
   return lines.join("\n");
 }
+
+/**
+ * Component Knowledge Pack (CPU, Mainboard, RAM, GPU, Storage, PSU, Cooling, Monitor, Case)
+ */
+export interface ComponentPack {
+  category:
+    | "CPU"
+    | "Mainboard"
+    | "Memory (RAM)"
+    | "Graphics Card (VGA)"
+    | "Storage"
+    | "Power Supply (PSU)"
+    | "Cooling System"
+    | "Monitor"
+    | "PC Case";
+  use_case: string;
+  rule: Record<string, string>; // flexible rule buckets
+  price_range: string;
+  examples: string[];
+  reason: string;
+  tips: string;
+}
+
+export const COMPONENT_KNOWLEDGE_PACK: ComponentPack[] = [
+  {
+    category: "CPU",
+    use_case: "เลือกซีพียูสำหรับงานทั่วไป / เกม / ตัดต่อ / AI",
+    rule: {
+      General: "Intel i3 / Ryzen 3 สำหรับงานเอกสาร, เบา ประหยัด",
+      Gaming: "Intel i5 / Ryzen 5 ขึ้นไป มี core ≥ 6 thread ≥ 12",
+      Creator: "Intel i7 / Ryzen 7 H-series / X-series, รองรับ PCIe 5.0",
+      "AI / Data": "Intel i9 / Ryzen 9 / Threadripper / Xeon, multi-core สูง",
+    },
+    price_range: "2,000–25,000 THB",
+    examples: [
+      "Intel Core i5-14400F",
+      "AMD Ryzen 5 7600",
+      "Intel Core i7-14700K",
+      "Ryzen 9 7950X3D",
+    ],
+    reason: "เลือกตามจำนวนคอร์และความเร็วต่อคอร์ให้เหมาะกับงาน",
+    tips: "ดูรุ่นที่มี iGPU หากไม่ใช้การ์ดจอแยก, ตรวจซ็อกเก็ตให้ตรงเมนบอร์ด",
+  },
+  {
+    category: "Mainboard",
+    use_case: "เลือกบอร์ดให้เข้ากับ CPU และอุปกรณ์รอบข้าง",
+    rule: {
+      Socket: "ต้องตรงกับ CPU เช่น LGA1700 (Intel 12–14 Gen), AM5 (Ryzen 7000+)",
+      Chipset: "B-series เหมาะสมคุ้มค่า, Z/X-series สำหรับ Overclock",
+      Slots: "มี M.2, PCIe 4/5, USB 3.2, LAN/Wi-Fi 6",
+    },
+    price_range: "3,000–12,000 THB",
+    examples: [
+      "ASUS PRIME B760M-A WiFi",
+      "MSI B650 Tomahawk",
+      "Gigabyte Z790 Aorus Elite AX",
+    ],
+    reason: "บอร์ดเป็นฐานของระบบ ต้องมีพอร์ตครบและจ่ายไฟเสถียร",
+    tips: "ดูจำนวนสล็อต RAM, การรองรับ PCIe Gen, Wi-Fi, BIOS version ล่าสุด",
+  },
+  {
+    category: "Memory (RAM)",
+    use_case: "เลือก RAM ให้พอดีกับการใช้งานและเมนบอร์ด",
+    rule: {
+      General: "16GB (2x8GB) DDR4/DDR5 ความเร็ว ≥ 3200MHz",
+      Gaming: "32GB DDR5 5600MHz ขึ้นไป",
+      Creator: "32–64GB สำหรับงานตัดต่อ/เรนเดอร์",
+      "AI / VM": "64–128GB ECC (ถ้าใช้ workstation)",
+    },
+    price_range: "1,500–12,000 THB",
+    examples: [
+      "Corsair Vengeance DDR5 5600 32GB",
+      "G.Skill Trident Z5 32GB DDR5 6000",
+      "Kingston Fury Beast 16GB DDR4 3200",
+    ],
+    reason: "RAM ช่วยให้ระบบทำงานหลายโปรแกรมพร้อมกันได้ลื่น",
+    tips: "ใช้คู่ Dual Channel, ตรวจเวอร์ชัน BIOS ที่รองรับ",
+  },
+  {
+    category: "Graphics Card (VGA)",
+    use_case: "เลือก GPU สำหรับเล่นเกม / ตัดต่อ / AI / ประหยัดไฟ",
+    rule: {
+      Entry: "GTX 1650 / RX 6500 XT สำหรับเกมทั่วไป",
+      Mid: "RTX 3060 / RX 6600 XT สำหรับ 1080p–1440p",
+      High: "RTX 4070 / RX 7800 XT สำหรับงาน 4K / Ray Tracing",
+      AI: "RTX 4070 Ti / 4090 (VRAM ≥ 12GB)",
+    },
+    price_range: "6,000–90,000 THB",
+    examples: ["NVIDIA RTX 4060 Ti", "AMD Radeon RX 7800 XT", "NVIDIA RTX 4090"],
+    reason: "GPU มีผลต่อภาพ เฟรมเรต และความเร็วในการเรนเดอร์",
+    tips: "เช็ค PSU ว่ารองรับวัตต์เพียงพอและมีพอร์ต PCIe 8-pin/12VHPWR",
+  },
+  {
+    category: "Storage",
+    use_case: "เก็บข้อมูลระบบและไฟล์งาน",
+    rule: {
+      "OS Drive": "NVMe SSD 500GB–1TB Gen 4",
+      "Data Drive": "HDD 2TB+ 7200RPM หรือ SSD SATA",
+      Creator: "Gen 4 NVMe 1TB+ อ่าน/เขียน >5000MB/s",
+    },
+    price_range: "1,500–8,000 THB",
+    examples: ["WD SN850X NVMe 1TB", "Samsung 980 Pro 1TB", "Seagate Barracuda 2TB HDD"],
+    reason: "SSD เพิ่มความเร็วในการบูตและโหลดโปรแกรมมากกว่า HDD",
+    tips: "ใช้ SSD แยกระหว่าง OS และงานจริง ป้องกันความช้า",
+  },
+  {
+    category: "Power Supply (PSU)",
+    use_case: "เลือก PSU ให้เหมาะกับโหลดของระบบ",
+    rule: {
+      Watt: "ใช้ ≥ 550W สำหรับระบบทั่วไป, ≥ 750W สำหรับการ์ดจอ RTX 40 series",
+      Efficiency: "80+ Bronze = มาตรฐาน, Gold/Platinum = เสถียรกว่า",
+      Connector: "ตรวจสอบ 8-pin, 12VHPWR ให้พอ",
+    },
+    price_range: "1,500–6,000 THB",
+    examples: [
+      "Corsair RM750e 750W 80+ Gold",
+      "Thermaltake Toughpower GF1 850W",
+      "Seasonic Focus GX 650W",
+    ],
+    reason: "จ่ายไฟไม่พอ = เครื่องดับ/จอฟ้า, PSU ควรมีมาตรฐานความปลอดภัย",
+    tips: "เผื่อวัตต์ ~30% จากโหลดจริง และเลือกแบรนด์ที่มีใบรับรอง 80+",
+  },
+  {
+    category: "Cooling System",
+    use_case: "ลดอุณหภูมิ CPU / GPU",
+    rule: {
+      "Air Cooler": "สำหรับ CPU ≤ 125W, ใช้งานทั่วไป/เล่นเกมเบา",
+      "AIO Liquid": "240–360mm สำหรับ CPU high-end / overclock",
+      "GPU Cooling": "ดูเคสและการระบายอากาศรวม",
+    },
+    price_range: "800–6,000 THB",
+    examples: ["Cooler Master Hyper 212 Halo", "DeepCool LS720 360mm AIO"],
+    reason: "คุมความร้อน = ยืดอายุและรักษาประสิทธิภาพ",
+    tips: "ตรวจ Clearance ของเคสก่อนซื้อ",
+  },
+  {
+    category: "Monitor",
+    use_case: "เลือกหน้าจอให้ตรงการใช้งาน (เกม / งาน / ดูหนัง)",
+    rule: {
+      Office: "23–27” IPS Full HD 75Hz",
+      Gaming: "27–32” IPS/VA 165Hz, 1ms, G-Sync/FreeSync",
+      Creator: "27” 2K/4K IPS 100% sRGB / DCI-P3 95%",
+      Portable: "14–16” USB-C 1080p สำหรับโน้ตบุ๊ก",
+    },
+    price_range: "3,500–20,000 THB",
+    examples: ["AOC 24G2SPU 165Hz", "ASUS ProArt PA278QV", "LG Ultragear 27GP850-B"],
+    reason: "จอที่ดีลดอาการปวดตาและช่วยแสดงสี/ภาพได้แม่นยำ",
+    tips: "ตรวจ refresh rate, color gamut, พอร์ตเชื่อมต่อ (HDMI/DP/USB-C)",
+  },
+  {
+    category: "PC Case",
+    use_case: "โครงสร้างและการระบายอากาศของเครื่อง",
+    rule: {
+      "Mini Tower": "ประหยัดพื้นที่ ใช้กับ mATX/ITX board",
+      "Mid Tower": "เหมาะกับระบบทั่วไป, รองรับ AIO 240mm",
+      "Full Tower": "สำหรับ high-end + GPU/PSU ขนาดใหญ่",
+    },
+    price_range: "1,200–6,000 THB",
+    examples: ["NZXT H5 Flow", "Lian Li Lancool 216", "Cooler Master TD500 Mesh"],
+    reason: "การไหลเวียนอากาศมีผลต่ออุณหภูมิรวมของระบบ",
+    tips: "ดู Clearance ของ GPU, PSU, Radiator ก่อนเลือก",
+  },
+];
+
+export function renderComponentGuidance(pack: ComponentPack): string {
+  const ruleLines = Object.entries(pack.rule).map(([k, v]) => `- ${k}: ${v}`).join("\n");
+  const lines = [
+    `หมวด: ${pack.category}`,
+    `Use-case: ${pack.use_case}`,
+    `เกณฑ์เลือก:\n${ruleLines}`,
+    `ช่วงราคา: ${pack.price_range}`,
+    `ตัวอย่าง: ${pack.examples.join(", ")}`,
+    `เหตุผล: ${pack.reason}`,
+    `ข้อควรระวัง: ${pack.tips}`,
+  ];
+  return lines.join("\n");
+}
