@@ -8,7 +8,7 @@ import { smartSearchV3 } from "./retriever-v3";
 import { COMMENT_REPLY_SYSTEM_PROMPT, FEW_SHOT_EXAMPLES } from "./prompts";
 import { SearchResult } from "./schema";
 import { detectQueryIntent } from "./query-intent";
-import { NOTEBOOK_KNOWLEDGE_PACK, NOTEBOOK_USECASE_KEYWORDS, renderNotebookGuidance } from "./knowledge-packs";
+import { NOTEBOOK_KNOWLEDGE_PACK, NOTEBOOK_USECASE_KEYWORDS, renderNotebookGuidance, COMPONENT_KNOWLEDGE_PACK, renderComponentGuidance } from "./knowledge-packs";
 
 const prisma = new PrismaClient();
 
@@ -149,15 +149,19 @@ export async function generateCommentReply(
     : "";
 
   // 5. Build messages with few-shot examples
-  // Attach guidance from Notebook knowledge pack if category suggests notebook/laptop usage
+  // Attach guidance from Knowledge Packs: prefer Component guidance if the comment mentions components; otherwise Notebook guidance
   let guidanceText = "";
-  const isNotebookContext = true; // For now, treat product recommendations as notebook by default
-  if (isNotebookContext) {
+  if (intent.components && intent.components.length > 0) {
+    // Choose the first detected component category
+    const comp = intent.components[0];
+    const pack = COMPONENT_KNOWLEDGE_PACK.find(p => p.category === comp) || COMPONENT_KNOWLEDGE_PACK[0];
+    guidanceText = `\n\n--- Knowledge Pack (Component Guidance - ${pack.category}) ---\n${renderComponentGuidance(pack)}`;
+  } else {
+    // Fallback to Notebook guidance routed by usageCategory if available
     let targetPack = undefined as ReturnType<typeof NOTEBOOK_KNOWLEDGE_PACK.find>;
     if (intent.usageCategory) {
       targetPack = NOTEBOOK_KNOWLEDGE_PACK.find((p) => p.category === intent.usageCategory);
     }
-    // If we didn't match usage-specific pack, provide a compact generic overview (first pack as baseline)
     const pack = targetPack || NOTEBOOK_KNOWLEDGE_PACK[0];
     guidanceText = `\n\n--- Knowledge Pack (Notebook Guidance) ---\n${renderNotebookGuidance(pack)}`;
   }
