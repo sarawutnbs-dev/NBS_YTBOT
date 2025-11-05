@@ -10,7 +10,8 @@ import { createEmbedding } from "./openai";
 import { SearchResult } from "./schema";
 import { hybridSearch } from "./retriever";
 import { twoStageHybridSearch } from "./retriever-v2";
-import { getVideoProductPool } from "./video-product-pool";
+import { detectQueryIntent } from "./query-intent";
+// Pool-based functions are disabled for current schema (no VideoProductPool table)
 
 const prisma = new PrismaClient();
 
@@ -91,84 +92,9 @@ export async function poolBasedHybridSearch(
     maxPoolProducts?: number;
   } = {}
 ): Promise<SearchResult[]> {
-  const {
-    topK = 6,
-    includeTranscripts = true,
-    includeProducts = true,
-    minScore = 0.3,
-    maxPoolProducts = 100
-  } = options;
-
-  const results: SearchResult[] = [];
-
-  // 1. Transcripts (no pool needed - direct search)
-  if (includeTranscripts) {
-    console.log(`[Pool-V3] Searching transcripts...`);
-    const transcriptResults = await hybridSearch(query, {
-      topK: Math.ceil(topK / 2),
-      sourceType: "transcript",
-      videoId,
-      minScore
-    });
-    results.push(...transcriptResults);
-    console.log(`[Pool-V3] Found ${transcriptResults.length} transcript results`);
-  }
-
-  // 2. Products (use pool if available)
-  if (includeProducts) {
-    // Check if pool exists
-    const poolCount = await prisma.videoProductPool.count({
-      where: { videoId }
-    });
-
-    if (poolCount > 0) {
-      console.log(`[Pool-V3] Using precomputed pool (${poolCount} products)...`);
-
-      // Get pool product IDs
-      const poolProductIds = await getVideoProductPool(videoId, {
-        topK: maxPoolProducts,
-        minScore: 0.1 // Lower threshold for pool selection
-      });
-
-      console.log(`[Pool-V3] Retrieved ${poolProductIds.length} products from pool`);
-
-      if (poolProductIds.length > 0) {
-        // Vector search on pool
-        const embedding = await createEmbedding(query);
-        const productResults = await vectorSearchOnPool(
-          embedding,
-          poolProductIds,
-          {
-            topK: Math.ceil(topK / 2),
-            minScore: 0.3
-          }
-        );
-
-        results.push(...productResults);
-        console.log(`[Pool-V3] Found ${productResults.length} product results from pool`);
-      }
-    } else {
-      // Fallback to two-stage retrieval
-      console.log(`[Pool-V3] No pool found, falling back to two-stage retrieval...`);
-      const twoStageResults = await twoStageHybridSearch(query, videoId, {
-        topK,
-        includeTranscripts: false, // Already searched
-        includeProducts: true,
-        minScore
-      });
-
-      results.push(...twoStageResults);
-    }
-  }
-
-  // Sort by score and return top K
-  const sorted = results
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
-
-  console.log(`[Pool-V3] Final results: ${sorted.length} total`);
-
-  return sorted;
+  // For current schema, directly use two-stage hybrid search with intent-aware filters (in retriever-v2)
+  console.log(`[Pool-V3] Pool disabled; using two-stage retrieval`);
+  return twoStageHybridSearch(query, videoId, options);
 }
 
 /**
@@ -183,40 +109,6 @@ export async function smartSearchV3(
     includeProducts?: boolean;
   } = {}
 ): Promise<SearchResult[]> {
-  // Try pool-based search first
-  try {
-    return await poolBasedHybridSearch(query, videoId, options);
-  } catch (error) {
-    console.error(`[Pool-V3] Pool-based search failed, falling back:`, error);
-
-    // Fallback to two-stage
-    try {
-      return await twoStageHybridSearch(query, videoId, options);
-    } catch (error2) {
-      console.error(`[Pool-V3] Two-stage search failed, using regular hybrid:`, error2);
-
-      // Final fallback to regular hybrid search
-      const { topK = 6, includeTranscripts = true, includeProducts = true } = options;
-      const sourceTypes: ("transcript" | "product")[] = [];
-
-      if (includeTranscripts) sourceTypes.push("transcript");
-      if (includeProducts) sourceTypes.push("product");
-
-      const results: SearchResult[] = [];
-
-      for (const sourceType of sourceTypes) {
-        const typeResults = await hybridSearch(query, {
-          topK: Math.ceil(topK / sourceTypes.length),
-          sourceType,
-          videoId: sourceType === "transcript" ? videoId : undefined,
-          minScore: 0.3
-        });
-        results.push(...typeResults);
-      }
-
-      return results
-        .sort((a, b) => b.score - a.score)
-        .slice(0, topK);
-    }
-  }
+  // Use two-stage with intent-aware filtering
+  return twoStageHybridSearch(query, videoId, options);
 }

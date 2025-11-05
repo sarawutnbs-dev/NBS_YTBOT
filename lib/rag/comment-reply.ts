@@ -7,6 +7,8 @@ import { chatCompletion } from "./openai";
 import { smartSearchV3 } from "./retriever-v3";
 import { COMMENT_REPLY_SYSTEM_PROMPT, FEW_SHOT_EXAMPLES } from "./prompts";
 import { SearchResult } from "./schema";
+import { detectQueryIntent } from "./query-intent";
+import { NOTEBOOK_KNOWLEDGE_PACK, NOTEBOOK_USECASE_KEYWORDS, renderNotebookGuidance } from "./knowledge-packs";
 
 const prisma = new PrismaClient();
 
@@ -64,6 +66,9 @@ export async function generateCommentReply(
   } = request;
 
   console.log(`[CommentReply] Generating reply for: "${commentText.substring(0, 50)}..."`);
+
+  // Detect intent from the comment to steer retrieval and guidance
+  const intent = detectQueryIntent(commentText);
 
   // 1. Retrieve contexts using smart search V3 (with pool if available)
   const contexts = await smartSearchV3(commentText, videoId, {
@@ -144,13 +149,26 @@ export async function generateCommentReply(
     : "";
 
   // 5. Build messages with few-shot examples
+  // Attach guidance from Notebook knowledge pack if category suggests notebook/laptop usage
+  let guidanceText = "";
+  const isNotebookContext = true; // For now, treat product recommendations as notebook by default
+  if (isNotebookContext) {
+    let targetPack = undefined as ReturnType<typeof NOTEBOOK_KNOWLEDGE_PACK.find>;
+    if (intent.usageCategory) {
+      targetPack = NOTEBOOK_KNOWLEDGE_PACK.find((p) => p.category === intent.usageCategory);
+    }
+    // If we didn't match usage-specific pack, provide a compact generic overview (first pack as baseline)
+    const pack = targetPack || NOTEBOOK_KNOWLEDGE_PACK[0];
+    guidanceText = `\n\n--- Knowledge Pack (Notebook Guidance) ---\n${renderNotebookGuidance(pack)}`;
+  }
+
   const systemPrompt = `${COMMENT_REPLY_SYSTEM_PROMPT}
 
 ${FEW_SHOT_EXAMPLES}
 
 --- Context Information ---
 
-${contextText}${productsText}`;
+${contextText}${productsText}${guidanceText}`;
 
   const messages = [
     {

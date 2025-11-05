@@ -9,6 +9,7 @@ import { PrismaClient } from "@prisma/client";
 import { createEmbedding } from "./openai";
 import { SearchResult } from "./schema";
 import { vectorSearch, keywordSearch, hybridSearch } from "./retriever";
+import { detectQueryIntent } from "./query-intent";
 
 const prisma = new PrismaClient();
 
@@ -176,10 +177,7 @@ export async function twoStageHybridSearch(
   const video = await prisma.videoIndex.findUnique({
     where: { videoId },
     select: {
-      categoryTags: true,
-      brandTags: true,
-      priceRangeMin: true,
-      priceRangeMax: true,
+      // Use only fields guaranteed to exist in current schema
       tags: true
     }
   });
@@ -201,14 +199,31 @@ export async function twoStageHybridSearch(
   if (includeProducts && video) {
     console.log(`[Two-Stage] Searching products with two-stage...`);
 
+    // Detect intent from query (comment) and use it to refine metadata filtering
+    const intent = detectQueryIntent(query);
+    const intentTags = intent.tags && intent.tags.length ? intent.tags : undefined;
+    let combinedPriceRange: [number, number] | undefined = undefined;
+    if (intent.priceRange) {
+      combinedPriceRange = intent.priceRange;
+    }
+
     // Stage 1: Filter candidates
     const candidateIds = await filterProductCandidates(videoId, {
-      categories: video.categoryTags.length > 0 ? video.categoryTags : undefined,
-      brands: video.brandTags.length > 0 ? video.brandTags : undefined,
-      tags: video.tags.length > 0 ? video.tags : undefined,
-      priceRange: video.priceRangeMin && video.priceRangeMax
-        ? [video.priceRangeMin, video.priceRangeMax]
+      categories: undefined,
+      // combine brand filters (video + intent)
+      brands: [
+        ...(intent.brands || [])
+      ].filter(Boolean).length
+        ? Array.from(new Set([...(intent.brands || [])]))
         : undefined,
+      // combine keyword tags (video + intent usage tags)
+      tags: [
+        ...((video?.tags as string[] | undefined) || []),
+        ...(intentTags || [])
+      ].filter(Boolean).length
+        ? Array.from(new Set([...(((video?.tags as string[] | undefined) || [])), ...(intentTags || [])]))
+        : undefined,
+      priceRange: combinedPriceRange,
       maxCandidates: 100, // Reduced from 10,000+ to 100
     });
 
@@ -256,13 +271,10 @@ export async function smartHybridSearch(
   // Check if video has metadata
   const video = await prisma.videoIndex.findUnique({
     where: { videoId },
-    select: { categoryTags: true, brandTags: true }
+    select: { tags: true }
   });
 
-  const hasMetadata = video && (
-    video.categoryTags.length > 0 ||
-    video.brandTags.length > 0
-  );
+  const hasMetadata = !!(video && Array.isArray(video.tags) && video.tags.length > 0);
 
   if (hasMetadata) {
     console.log(`[SmartSearch] Using two-stage search (metadata available)`);
