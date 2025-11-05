@@ -168,3 +168,47 @@ export async function resolveCommentThread(commentId: string) {
   const { data } = await axios.get(`${API_BASE}/comments`, { params });
   return data;
 }
+
+export type YouTubeVideoInfo = {
+  videoId: string;
+  title: string;
+  description: string;
+  publishedAt: string;
+  channelId: string;
+  channelTitle: string;
+  thumbnails?: any;
+};
+
+export async function getVideoInfo(videoIds: string[]): Promise<YouTubeVideoInfo[]> {
+  if (videoIds.length === 0) return [];
+
+  const env = getEnv();
+  const params = new URLSearchParams({
+    part: "snippet",
+    id: videoIds.join(","),
+    key: env.YOUTUBE_API_KEY
+  });
+
+  try {
+    const { data } = await axios.get(`${API_BASE}/videos`, { params });
+    const items = (data.items ?? []) as Array<Record<string, any>>;
+
+    return items.map(item => ({
+      videoId: item.id,
+      title: item.snippet?.title ?? "",
+      description: item.snippet?.description ?? "",
+      publishedAt: item.snippet?.publishedAt ?? "",
+      channelId: item.snippet?.channelId ?? "",
+      channelTitle: item.snippet?.channelTitle ?? "",
+      thumbnails: item.snippet?.thumbnails
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const details =
+      (error as any)?.response?.data?.error?.message ??
+      (error as any)?.response?.statusText ??
+      "Unknown YouTube API error";
+
+    throw new Error(`YouTube videos request failed: ${details} (${message})`);
+  }
+}
