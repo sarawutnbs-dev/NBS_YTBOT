@@ -64,11 +64,11 @@ export async function ingestProductsJob(options: IngestProductsOptions = {}) {
       SELECT
         p."id" as "productId",
         p."name",
-        p."description",
         p."price",
-        p."url",
-        p."imageUrl",
-        p."category",
+        p."affiliateUrl",
+        p."shortURL",
+        p."productLink",
+        p."categoryName",
         p."tags"
       FROM "Product" p
       ${whereClause}
@@ -107,16 +107,19 @@ export async function ingestProductsJob(options: IngestProductsOptions = {}) {
     }
 
     // Convert to ProductSource format
-    const productSources: ProductSource[] = products.map((p) => ({
-      productId: p.productId,
-      name: p.name,
-      description: p.description || undefined,
-      price: p.price ? parseFloat(p.price) : undefined,
-      url: p.url || undefined,
-      imageUrl: p.imageUrl || undefined,
-      category: p.category || undefined,
-      tags: p.tags || undefined,
-    }));
+    const productSources: ProductSource[] = products.map((p) => {
+      const url = p.shortURL || p.affiliateUrl || p.productLink || undefined;
+      return {
+        productId: p.productId,
+        name: p.name,
+        description: undefined, // not available in current schema
+        price: p.price != null ? Number(p.price) : undefined,
+        url,
+        imageUrl: undefined, // not available in current schema
+        category: p.categoryName || undefined,
+        tags: p.tags || undefined,
+      } as ProductSource;
+    });
 
     // Ingest in batches of 20
     const batchSize = 20;
