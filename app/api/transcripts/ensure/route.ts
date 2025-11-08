@@ -6,6 +6,7 @@ import { ensureVideoIndex } from "@/lib/videoIndexService";
 
 const bodySchema = z.object({
   videoId: z.string().min(1, "videoId is required"),
+  forceReindex: z.boolean().optional().default(false),
 });
 
 export async function POST(request: Request) {
@@ -14,9 +15,9 @@ export async function POST(request: Request) {
     assert(isAllowedUser, session, "Forbidden");
 
     const body = await request.json();
-    const { videoId } = bodySchema.parse(body);
+    const { videoId, forceReindex } = bodySchema.parse(body);
 
-    const result = await ensureVideoIndex(videoId);
+    const result = await ensureVideoIndex(videoId, { forceReindex });
 
     return NextResponse.json(result);
   } catch (error) {

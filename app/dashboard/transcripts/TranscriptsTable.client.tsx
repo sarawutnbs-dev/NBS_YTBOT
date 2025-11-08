@@ -63,8 +63,11 @@ export default function TranscriptsTable() {
   const handleRunRetry = async (videoId: string) => {
     setLoadingVideoId(videoId);
     try {
-      await axios.post("/api/transcripts/ensure", { videoId });
-      message.success("Video queued for indexing");
+      await axios.post("/api/transcripts/ensure", {
+        videoId,
+        forceReindex: true // Force re-scraping and re-indexing
+      });
+      message.success("Video queued for re-indexing");
       mutate();
     } catch (error) {
       message.error("Failed to queue video");
