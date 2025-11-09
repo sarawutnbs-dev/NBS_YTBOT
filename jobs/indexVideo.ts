@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { IndexStatus } from "@prisma/client";
 import { fetchVideoMeta, getCaptions, chunkTranscript, buildIndex } from "@/lib/transcript";
+import { scrapeTranscriptFromTubeTranscript } from "@/lib/transcriptScraper";
 import { extractVideoTags } from "@/lib/tagUtils";
 import { ingestTranscript } from "@/lib/rag/ingest";
 import type { TranscriptSource } from "@/lib/rag/schema";
@@ -50,30 +51,42 @@ export async function indexVideo({ videoId }: { videoId: string }) {
 
   try {
     console.log(`[indexVideo] Fetching captions for ${videoId}`);
-    const text = await getCaptions(videoId);
+    let text = await getCaptions(videoId);
+    let source: "captions" | "tubetranscript" = "captions";
+
     if (!text) {
-      console.log(`[indexVideo] No YouTube captions - scheduling scrape job (tubetranscript)`);
+      console.log(`[indexVideo] No YouTube captions - trying TubeTranscript scraper fallback`);
 
-      // If another worker (e.g. TubeTranscript fallback) already completed processing,
-      // it may have flipped status to READY while this job was still running.
-      const latest = await prisma.videoIndex.findUnique({ where: { videoId } });
-      if (latest?.status === IndexStatus.READY) {
-        console.log(`[indexVideo] Captions missing but video ${videoId} already READY (likely fallback). Skipping reset.`);
-        return latest;
-      }
+      // Try TubeTranscript scraper as fallback
+      const scrapedText = await scrapeTranscriptFromTubeTranscript(videoId, 15000);
+      if (scrapedText && scrapedText.length > 200) {
+        text = scrapedText;
+        source = "tubetranscript";
+        console.log(`[indexVideo] ✅ Found transcript via TubeTranscript scraper for ${videoId}`);
+      } else {
+        console.log(`[indexVideo] ❌ No transcript found (YouTube captions or TubeTranscript)`);
 
-      // Leave status INDEXING; external scrape job will populate RawTranscript then processing job will finish index.
-      return await prisma.videoIndex.update({
-        where: { videoId },
-        data: {
-          errorMessage: "awaiting scraped transcript",
-          source: null
+        // If another worker already completed processing, skip
+        const latest = await prisma.videoIndex.findUnique({ where: { videoId } });
+        if (latest?.status === IndexStatus.READY) {
+          console.log(`[indexVideo] Video ${videoId} already READY. Skipping reset.`);
+          return latest;
         }
-      });
+
+        // Mark as FAILED since no transcript source is available
+        return await prisma.videoIndex.update({
+          where: { videoId },
+          data: {
+            status: IndexStatus.FAILED,
+            errorMessage: "No transcript available (YouTube captions or TubeTranscript scraper)",
+            source: null
+          }
+        });
+      }
     }
-    const source: "captions" = "captions";
+
     console.log(`[indexVideo] Chunking transcript for ${videoId} (source: ${source})`);
-    const chunks = chunkTranscript(text, 400);
+    const chunks = chunkTranscript(text);
 
     console.log(`[indexVideo] Building index for ${videoId} (${chunks.length} chunks)`);
     const { summaryJSON } = await buildIndex(chunks);

@@ -195,17 +195,46 @@ export async function getTranscriptFromGitHub(videoId: string, publishedAt?: str
   }
 }
 
-export function chunkTranscript(text: string, maxChars = 400): string[] {
+export function chunkTranscript(text: string, maxChars = 12000): string[] {
   const chunks: string[] = [];
   const sentences = text.split(/[.!?]\s+/);
   let currentChunk = "";
 
-  for (const sentence of sentences) {
-    if ((currentChunk + sentence).length > maxChars && currentChunk.length > 0) {
-      chunks.push(currentChunk.trim());
-      currentChunk = sentence;
+  for (let sentence of sentences) {
+    // If a single sentence is longer than maxChars, split it by words
+    if (sentence.length > maxChars) {
+      // Push current chunk if it exists
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+        currentChunk = "";
+      }
+
+      // Split long sentence by words
+      const words = sentence.split(/\s+/);
+      let wordChunk = "";
+
+      for (const word of words) {
+        if ((wordChunk + " " + word).length > maxChars) {
+          if (wordChunk.trim()) {
+            chunks.push(wordChunk.trim());
+          }
+          wordChunk = word;
+        } else {
+          wordChunk += (wordChunk ? " " : "") + word;
+        }
+      }
+
+      if (wordChunk.trim()) {
+        currentChunk = wordChunk;
+      }
     } else {
-      currentChunk += (currentChunk ? " " : "") + sentence;
+      // Normal sentence processing
+      if ((currentChunk + " " + sentence).length > maxChars && currentChunk.length > 0) {
+        chunks.push(currentChunk.trim());
+        currentChunk = sentence;
+      } else {
+        currentChunk += (currentChunk ? " " : "") + sentence;
+      }
     }
   }
 

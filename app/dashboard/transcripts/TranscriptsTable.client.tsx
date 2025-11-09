@@ -42,6 +42,7 @@ export default function TranscriptsTable() {
   const [searchQuery, setSearchQuery] = useState("");
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
+  const [loadingRunAll, setLoadingRunAll] = useState(false);
 
   const swrKey = `/api/transcripts?q=${searchQuery}&status=${status === "ALL" ? "" : status}&page=${page}&pageSize=${pageSize}`;
   const { data, error, isLoading, mutate } = useSWR<ListResponse>(swrKey, fetcher, {
@@ -78,6 +79,7 @@ export default function TranscriptsTable() {
   };
 
   const handleRunAllMissing = async () => {
+    setLoadingRunAll(true);
     try {
       const response = await axios.post("/api/transcripts/ensure-missing");
       message.success(`Queued ${response.data.count} video(s) for indexing`);
@@ -85,6 +87,8 @@ export default function TranscriptsTable() {
     } catch (error) {
       message.error("Failed to queue missing videos");
       console.error(error);
+    } finally {
+      setLoadingRunAll(false);
     }
   };
 
@@ -188,6 +192,7 @@ export default function TranscriptsTable() {
           icon={<PlayCircleOutlined />}
           onClick={handleRunAllMissing}
           type="primary"
+          loading={loadingRunAll}
         >
           Run All (Missing only)
         </Button>

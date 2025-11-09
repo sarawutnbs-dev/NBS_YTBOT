@@ -117,11 +117,6 @@ export async function ensureVideoIndex(videoId: string, opts?: { forceReindex?: 
         errorMessage: null,
       },
     });
-
-    await (prisma as any)["rawTranscript"].updateMany({
-      where: { videoId },
-      data: { status: "PENDING" },
-    });
   }
 
   // Skip if already READY or actively indexing without forcing
@@ -166,8 +161,8 @@ async function scrapeAndProcessTranscript(videoId: string, delayMs = 15000): Pro
       return { ok: false, reason: "already_has_chunks" };
     }
 
-    console.log(`[transcriptFallback] Scraping ${videoId} from TubeTranscript`);
-    const text = await scrapeTranscriptFromTubeTranscript(videoId, delayMs);
+    console.log(`[transcriptFallback] Attempting to scrape transcript from TubeTranscript...`);
+    const text: string | null = await scrapeTranscriptFromTubeTranscript(videoId, delayMs);
 
     if (!text || text.length < 200) {
       await prisma.videoIndex.update({
@@ -178,21 +173,10 @@ async function scrapeAndProcessTranscript(videoId: string, delayMs = 15000): Pro
         },
       });
 
-      await (prisma as any)["rawTranscript"].updateMany({
-        where: { videoId },
-        data: { status: "FAILED" },
-      });
-
       return { ok: false, reason: "scraper_returned_insufficient_text" };
     }
 
-    await (prisma as any)["rawTranscript"].upsert({
-      where: { videoId },
-      update: { text, source: "tubetranscript", status: "PENDING" },
-      create: { videoId, text, source: "tubetranscript", status: "PENDING" },
-    });
-
-    const chunks = chunkTranscript(text, 400);
+    const chunks = chunkTranscript(text);
     const { summaryJSON } = await buildIndex(chunks);
 
     try {
@@ -227,11 +211,6 @@ async function scrapeAndProcessTranscript(videoId: string, delayMs = 15000): Pro
       return { ok: false, reason: "status_changed_before_update" };
     }
 
-    await (prisma as any)["rawTranscript"].update({
-      where: { videoId },
-      data: { status: "PROCESSED" },
-    });
-
     console.log(`[transcriptFallback] ✅ Completed fallback for ${videoId} (${chunks.length} chunks)`);
     return { ok: true, chunks: chunks.length };
   } catch (e) {
@@ -241,11 +220,6 @@ async function scrapeAndProcessTranscript(videoId: string, delayMs = 15000): Pro
       await prisma.videoIndex.update({
         where: { videoId },
         data: { status: IndexStatus.FAILED, errorMessage: (e as Error).message ?? "scrape failed" },
-      });
-
-      await (prisma as any)["rawTranscript"].updateMany({
-        where: { videoId },
-        data: { status: "FAILED" },
       });
     } catch (inner) {
       console.error(`[transcriptFallback] Failed to mark ${videoId} as FAILED`, inner);
