@@ -126,12 +126,27 @@ export default function VideoList({ groups, selectedVideoId, onSelectVideo }: Vi
                 <Checkbox.Group
                   value={commentStatusFilters}
                   onChange={(values) => {
-                    if (values.includes("ALL")) {
+                    const checkedValues = values as CommentStatusFilter[];
+
+                    // ถ้าไม่มีค่าใดๆ ให้กลับไปเป็น ALL
+                    if (checkedValues.length === 0) {
                       setCommentStatusFilters(["ALL"]);
-                    } else if (values.length === 0) {
+                      return;
+                    }
+
+                    // ถ้า ALL เพิ่งถูกเลือก (ไม่อยู่ใน state เก่า แต่อยู่ใน values ใหม่)
+                    const wasAllSelected = commentStatusFilters.includes("ALL");
+                    const isAllSelected = checkedValues.includes("ALL");
+
+                    if (isAllSelected && !wasAllSelected) {
+                      // User เพิ่งกด ALL -> เลือก ALL อย่างเดียว
                       setCommentStatusFilters(["ALL"]);
+                    } else if (isAllSelected && checkedValues.length > 1) {
+                      // User กด checkbox อื่นขณะที่ ALL ถูกเลือกอยู่ -> ยกเลิก ALL
+                      setCommentStatusFilters(checkedValues.filter((v) => v !== "ALL"));
                     } else {
-                      setCommentStatusFilters(values.filter((v) => v !== "ALL") as CommentStatusFilter[]);
+                      // กรณีปกติ
+                      setCommentStatusFilters(checkedValues);
                     }
                   }}
                   style={{ display: "flex", flexDirection: "column", gap: 6 }}
@@ -162,12 +177,27 @@ export default function VideoList({ groups, selectedVideoId, onSelectVideo }: Vi
                 <Checkbox.Group
                   value={videoStatusFilters}
                   onChange={(values) => {
-                    if (values.includes("ALL")) {
+                    const checkedValues = values as VideoStatusFilter[];
+
+                    // ถ้าไม่มีค่าใดๆ ให้กลับไปเป็น ALL
+                    if (checkedValues.length === 0) {
                       setVideoStatusFilters(["ALL"]);
-                    } else if (values.length === 0) {
+                      return;
+                    }
+
+                    // ถ้า ALL เพิ่งถูกเลือก (ไม่อยู่ใน state เก่า แต่อยู่ใน values ใหม่)
+                    const wasAllSelected = videoStatusFilters.includes("ALL");
+                    const isAllSelected = checkedValues.includes("ALL");
+
+                    if (isAllSelected && !wasAllSelected) {
+                      // User เพิ่งกด ALL -> เลือก ALL อย่างเดียว
                       setVideoStatusFilters(["ALL"]);
+                    } else if (isAllSelected && checkedValues.length > 1) {
+                      // User กด checkbox อื่นขณะที่ ALL ถูกเลือกอยู่ -> ยกเลิก ALL
+                      setVideoStatusFilters(checkedValues.filter((v) => v !== "ALL"));
                     } else {
-                      setVideoStatusFilters(values.filter((v) => v !== "ALL") as VideoStatusFilter[]);
+                      // กรณีปกติ
+                      setVideoStatusFilters(checkedValues);
                     }
                   }}
                   style={{ display: "flex", flexDirection: "column", gap: 6 }}

@@ -6,6 +6,7 @@ import { CheckOutlined, CloseOutlined, SendOutlined, EditOutlined, ReloadOutline
 import { format } from "date-fns";
 import type { Draft, Comment } from "@prisma/client";
 import axios from "axios";
+import AIContextModal from "./AIContextModal";
 
 const { TextArea } = Input;
 
@@ -32,10 +33,13 @@ interface CommentDetailProps {
 export default function CommentDetail({ group, onRefresh }: CommentDetailProps) {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [editedReply, setEditedReply] = useState<string>("");
   const [editedProducts, setEditedProducts] = useState<Array<{ name: string; url: string; price: string }>>([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [contextData, setContextData] = useState<any>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   if (!group) {
     return (
@@ -47,19 +51,41 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
 
   const commentsWithoutDrafts = group.comments.filter((c) => !c.draft);
 
-  async function handleSendToAI() {
+  async function handlePreviewContext() {
     try {
-      setLoading(true);
+      setContextLoading(true);
+      const response = await axios.post("/api/drafts/preview-context", { videoId: group!.videoId });
+      setContextData(response.data.data);
+      setModalVisible(true);
+    } catch (error: any) {
+      console.error(error);
+      const errorMsg = error.response?.data?.error || "ไม่สามารถดึงข้อมูล context ได้";
+      message.error(errorMsg);
+    } finally {
+      setContextLoading(false);
+    }
+  }
+
+  async function handleConfirmSendToAI() {
+    try {
+      setConfirmLoading(true);
       const response = await axios.post("/api/drafts/generate-video", { videoId: group!.videoId });
       message.success(response.data.message || "สร้างร่างคำตอบสำเร็จ");
+      setModalVisible(false);
+      setContextData(null);
       onRefresh();
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.response?.data?.error || "ไม่สามารถสร้างร่างคำตอบได้";
       message.error(errorMsg);
     } finally {
-      setLoading(false);
+      setConfirmLoading(false);
     }
+  }
+
+  function handleCancelModal() {
+    setModalVisible(false);
+    setContextData(null);
   }
 
   async function handleReject(draftId: string) {
@@ -96,17 +122,6 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
     }
   }
 
-  function toggleExpand(commentId: string) {
-    setExpandedComments((prev) => {
-      const next = new Set(prev);
-      if (next.has(commentId)) {
-        next.delete(commentId);
-      } else {
-        next.add(commentId);
-      }
-      return next;
-    });
-  }
 
   function handleStartEdit(draftId: string, currentReply: string, currentProducts: Array<{ name: string; url: string; price: string }>) {
     console.log('handleStartEdit called:', { draftId, currentReply, currentProducts, currentEditingDraftId: editingDraftId });
@@ -175,8 +190,8 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
             <Button
               type="primary"
               icon={<SendOutlined />}
-              onClick={handleSendToAI}
-              loading={loading}
+              onClick={handlePreviewContext}
+              loading={contextLoading}
               disabled={!group.hasTranscript || commentsWithoutDrafts.length === 0}
               size="small"
             >
@@ -195,7 +210,6 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
       <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
         <Space direction="vertical" style={{ width: "100%" }} size={16}>
           {group.comments.map((comment) => {
-            const isExpanded = expandedComments.has(comment.id);
             const hasDraft = !!comment.draft;
             const isPending = comment.draft?.status === "PENDING";
 
@@ -300,22 +314,11 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
 
                   {/* Draft Reply */}
                   {hasDraft && (
-                    <div>
-                      <Button
-                        type="link"
-                        size="small"
-                        onClick={() => toggleExpand(comment.id)}
-                        style={{ padding: 0, height: "auto", fontSize: 12 }}
-                      >
-                        {isExpanded ? "ซ่อนคำตอบ" : "แสดงคำตอบ"}
-                      </Button>
-
-                      {isExpanded && (
-                        <Card
-                          size="small"
-                          style={{ backgroundColor: "#fafafa", marginTop: 8, borderRadius: 6 }}
-                          bodyStyle={{ padding: 8 }}
-                        >
+                    <Card
+                      size="small"
+                      style={{ backgroundColor: "#fafafa", marginTop: 8, borderRadius: 6 }}
+                      bodyStyle={{ padding: 8 }}
+                    >
                           <Space direction="vertical" style={{ width: "100%" }} size={8}>
                             <div>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -464,16 +467,14 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
 
                             <Space size={12}>
                               <Text type="secondary" style={{ fontSize: 11 }}>
-                                Engagement: {(comment.draft.engagementScore || 0).toFixed(2)}
+                                Engagement: {(comment.draft?.engagementScore || 0).toFixed(2)}
                               </Text>
                               <Text type="secondary" style={{ fontSize: 11 }}>
-                                Relevance: {(comment.draft.relevanceScore || 0).toFixed(2)}
+                                Relevance: {(comment.draft?.relevanceScore || 0).toFixed(2)}
                               </Text>
                             </Space>
                           </Space>
                         </Card>
-                      )}
-                    </div>
                   )}
                 </Space>
               </Card>
@@ -488,6 +489,16 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
           {group.comments.length} Comments
         </Text>
       </div>
+
+      {/* AI Context Modal */}
+      <AIContextModal
+        visible={modalVisible}
+        data={contextData}
+        loading={contextLoading}
+        onConfirm={handleConfirmSendToAI}
+        onCancel={handleCancelModal}
+        confirmLoading={confirmLoading}
+      />
     </div>
   );
 }

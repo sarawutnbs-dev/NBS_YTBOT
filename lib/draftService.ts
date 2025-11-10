@@ -83,10 +83,9 @@ export async function generateDraftsForComments() {
 
       console.log(`[draftService] Found ${products.length} products matching video tags`);
 
-      // ถ้าไม่มีสินค้าที่ตรงกับ tag ให้ข้าม
+      // ถ้าไม่มีสินค้าที่ตรงกับ tag ให้ส่ง empty array ไปให้ AI (AI จะตอบโดยไม่แนะนำสินค้า)
       if (products.length === 0) {
-        console.log(`[draftService] Skipping video ${videoId} - no products with matching tags`);
-        continue;
+        console.log(`[draftService] No products with matching tags for video ${videoId} - will proceed without product suggestions`);
       }
 
       // 7. ตัดข้อมูลให้พอดี token และส่งให้ AI แบบแบ่ง batch
@@ -204,9 +203,9 @@ export async function generateDraftsForVideo(videoId: string) {
 
   console.log(`[draftService] Found ${products.length} products matching video tags`);
 
-  // ถ้าไม่มีสินค้าที่ตรงกับ tag ให้แจ้ง error
+  // ถ้าไม่มีสินค้าที่ตรงกับ tag ให้ส่ง empty array ไปให้ AI (AI จะตอบโดยไม่แนะนำสินค้า)
   if (products.length === 0) {
-    throw new Error(`No products found with tags matching video tags: ${videoTags.join(', ')}`);
+    console.log(`[draftService] No products with matching tags for video ${videoId} (tags: ${videoTags.join(', ')}) - will proceed without product suggestions`);
   }
 
   // 5. ตัดข้อมูลให้พอดี token
