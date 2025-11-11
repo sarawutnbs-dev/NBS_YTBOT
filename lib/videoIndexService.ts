@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { IndexStatus } from "@prisma/client";
 import { ensureVideoIndexFor } from "@/lib/transcriptQueue";
 import { scrapeTranscriptFromTubeTranscript } from "@/lib/transcriptScraper";
-import { chunkTranscript, buildIndex } from "@/lib/transcript";
+import { chunkTranscript, buildIndex, fetchVideoMeta } from "@/lib/transcript";
 import { ingestTranscript } from "@/lib/rag/ingest";
 
 export type VideoIndexListItem = {
@@ -230,31 +230,129 @@ async function scrapeAndProcessTranscript(videoId: string, delayMs = 15000): Pro
 }
 
 export async function ensureMissing() {
-  // Find all unique videoIds from comments
-  const videoIdsFromComments = await prisma.comment.findMany({
-    select: { videoId: true },
-    distinct: ["videoId"],
-  });
+  try {
+    console.log(`[ensureMissing] Starting...`);
 
-  const allVideoIds = videoIdsFromComments.map((c) => c.videoId);
+    // Find all unique videoIds from comments
+    const videoIdsFromComments = await prisma.comment.findMany({
+      select: { videoId: true },
+      distinct: ["videoId"],
+    });
 
-  // Find which ones don't have READY or INDEXING status
-  const existingIndexes = await prisma.videoIndex.findMany({
-    where: {
-      videoId: { in: allVideoIds },
-      status: { in: [IndexStatus.READY, IndexStatus.INDEXING] },
-    },
-    select: { videoId: true },
-  });
+    const allVideoIds = videoIdsFromComments.map((c) => c.videoId);
+    console.log(`[ensureMissing] Found ${allVideoIds.length} unique video(s) from comments`);
 
-  const existingSet = new Set(existingIndexes.map((v) => v.videoId));
-  const missingVideoIds = allVideoIds.filter((vid) => !existingSet.has(vid));
+    if (allVideoIds.length === 0) {
+      return { queued: false, count: 0, metadataUpdated: 0, total: 0 };
+    }
 
-  if (missingVideoIds.length > 0) {
-    await ensureVideoIndexFor(new Set(missingVideoIds));
+    // Find which ones don't have READY or INDEXING status
+    const existingIndexes = await prisma.videoIndex.findMany({
+      where: {
+        videoId: { in: allVideoIds },
+        status: { in: [IndexStatus.READY, IndexStatus.INDEXING] },
+      },
+      select: { videoId: true },
+    });
+
+    const existingSet = new Set(existingIndexes.map((v) => v.videoId));
+    const missingVideoIds = allVideoIds.filter((vid) => !existingSet.has(vid));
+
+    console.log(`[ensureMissing] Found ${missingVideoIds.length} video(s) needing indexing`);
+
+    if (missingVideoIds.length > 0) {
+      try {
+        await ensureVideoIndexFor(new Set(missingVideoIds));
+      } catch (error) {
+        console.error(`[ensureMissing] Error queuing videos for indexing:`, error);
+        throw new Error(`Failed to queue ${missingVideoIds.length} video(s) for indexing: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    // Check for videos with missing title or publishedAt
+    console.log(`[ensureMissing] Checking for videos with missing title/year...`);
+    const videosWithMissingInfo = await prisma.videoIndex.findMany({
+      where: {
+        videoId: { in: allVideoIds },
+        OR: [
+          { title: { equals: "" } },
+          { title: null },
+          { publishedAt: null },
+        ],
+      },
+      select: {
+        videoId: true,
+        title: true,
+        publishedAt: true,
+      },
+    });
+
+    let metadataUpdatedCount = 0;
+
+    if (videosWithMissingInfo.length > 0) {
+      console.log(`[ensureMissing] Found ${videosWithMissingInfo.length} video(s) with missing title/year`);
+
+      // Process in batches to avoid rate limiting
+      const BATCH_SIZE = 5;
+      const DELAY_BETWEEN_REQUESTS = 200; // 200ms delay
+
+      for (let i = 0; i < videosWithMissingInfo.length; i++) {
+        const video = videosWithMissingInfo[i];
+
+        try {
+          console.log(`[ensureMissing] Fetching metadata for ${video.videoId} (${i + 1}/${videosWithMissingInfo.length})...`);
+          const meta = await fetchVideoMeta(video.videoId);
+
+          if (meta) {
+            const updateData: any = {};
+
+            // Update title if missing
+            if (!video.title || video.title === "") {
+              updateData.title = meta.title || "Untitled Video";
+            }
+
+            // Update publishedAt if missing
+            if (!video.publishedAt && meta.publishedAt) {
+              updateData.publishedAt = new Date(meta.publishedAt);
+            }
+
+            if (Object.keys(updateData).length > 0) {
+              await prisma.videoIndex.update({
+                where: { videoId: video.videoId },
+                data: updateData,
+              });
+              metadataUpdatedCount++;
+              console.log(`[ensureMissing] ✅ Updated metadata for ${video.videoId}:`, updateData);
+            }
+          } else {
+            console.warn(`[ensureMissing] No metadata returned for ${video.videoId}`);
+          }
+
+          // Add delay between requests to avoid rate limiting
+          if (i < videosWithMissingInfo.length - 1 && (i + 1) % BATCH_SIZE === 0) {
+            console.log(`[ensureMissing] Batch completed, waiting ${DELAY_BETWEEN_REQUESTS}ms...`);
+            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_REQUESTS));
+          }
+        } catch (error) {
+          console.error(`[ensureMissing] Failed to fetch metadata for ${video.videoId}:`, error);
+          // Continue with other videos instead of failing completely
+        }
+      }
+    }
+
+    const totalProcessed = missingVideoIds.length + metadataUpdatedCount;
+    console.log(`[ensureMissing] ✅ Complete - Queued: ${missingVideoIds.length}, Metadata updated: ${metadataUpdatedCount}`);
+
+    return {
+      queued: true,
+      count: missingVideoIds.length,
+      metadataUpdated: metadataUpdatedCount,
+      total: totalProcessed,
+    };
+  } catch (error) {
+    console.error(`[ensureMissing] Fatal error:`, error);
+    throw error;
   }
-
-  return { queued: true, count: missingVideoIds.length };
 }
 
 /**

@@ -3,15 +3,10 @@ import { getEnv } from "./config";
 
 type YoutubeClient = ReturnType<typeof google.youtube>;
 
-let cachedOauthYoutube: YoutubeClient | null = null;
-let cachedApiYoutube: YoutubeClient | null = null;
-
+// Don't cache YouTube clients to ensure fresh credentials
 function getOauthYoutubeClient(): YoutubeClient | null {
-  if (cachedOauthYoutube) {
-    return cachedOauthYoutube;
-  }
-
-  const env = getEnv();
+  // Always re-read env to get fresh credentials
+  const env = getEnv({ skipCache: true });
 
   if (!env.YOUTUBE_OAUTH_REFRESH_TOKEN) {
     return null;
@@ -20,24 +15,18 @@ function getOauthYoutubeClient(): YoutubeClient | null {
   const oauth2Client = new google.auth.OAuth2(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
   oauth2Client.setCredentials({ refresh_token: env.YOUTUBE_OAUTH_REFRESH_TOKEN });
 
-  cachedOauthYoutube = google.youtube({
+  return google.youtube({
     version: "v3",
     auth: oauth2Client,
   });
-
-  return cachedOauthYoutube;
 }
 
 function getApiKeyYoutubeClient(): YoutubeClient {
-  if (!cachedApiYoutube) {
-    const env = getEnv();
-    cachedApiYoutube = google.youtube({
-      version: "v3",
-      auth: env.YOUTUBE_API_KEY,
-    });
-  }
-
-  return cachedApiYoutube;
+  const env = getEnv();
+  return google.youtube({
+    version: "v3",
+    auth: env.YOUTUBE_API_KEY,
+  });
 }
 
 function getYoutubeClient(): YoutubeClient {

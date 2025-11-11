@@ -13,23 +13,30 @@ const envSchema = z.object({
   AI_API_KEY: z.string().optional()
 });
 
-const runtimeEnv = (
-  (globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
-  }).process?.env ?? {}
-) as Record<string, string | undefined>;
-
-const parsed = envSchema.safeParse(runtimeEnv);
-
 export type AppEnv = z.infer<typeof envSchema>;
 
-export function getEnv(): AppEnv {
-  if (!parsed.success) {
-    const formatted = parsed.error.format();
-    throw new Error(`Environment validation error: ${JSON.stringify(formatted)}`);
+let cachedEnv: AppEnv | null = null;
+
+export function getEnv(options: { skipCache?: boolean } = {}): AppEnv {
+  // Allow forcing a fresh read of environment variables
+  if (options.skipCache || !cachedEnv) {
+    const runtimeEnv = (
+      (globalThis as typeof globalThis & {
+        process?: { env?: Record<string, string | undefined> };
+      }).process?.env ?? {}
+    ) as Record<string, string | undefined>;
+
+    const parsed = envSchema.safeParse(runtimeEnv);
+
+    if (!parsed.success) {
+      const formatted = parsed.error.format();
+      throw new Error(`Environment validation error: ${JSON.stringify(formatted)}`);
+    }
+
+    cachedEnv = parsed.data;
   }
 
-  return parsed.data;
+  return cachedEnv;
 }
 
 export const appConfig = {

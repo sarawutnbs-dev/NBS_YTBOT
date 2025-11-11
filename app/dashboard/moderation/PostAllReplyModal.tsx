@@ -44,7 +44,7 @@ export default function PostAllReplyModal({ visible, groups, onClose, onComplete
   const [currentIndex, setCurrentIndex] = useState(0);
   const [commentStatuses, setCommentStatuses] = useState<Map<string, CommentProcessStatus>>(new Map());
 
-  // Flatten all comments with PENDING drafts from all videos
+  // Flatten all comments with PENDING drafts from all videos (excluding REJECTED)
   const pendingComments = groups.flatMap((group) =>
     group.comments
       .filter((c) => c.draft && c.draft.status === "PENDING")
@@ -244,13 +244,14 @@ export default function PostAllReplyModal({ visible, groups, onClose, onComplete
                     key={comment.id}
                     size="small"
                     style={{
-                      background: isSelected ? "#f0f5ff" : "white",
-                      border: isSelected ? "1px solid #1890ff" : "1px solid #f0f0f0",
+                      background: isSelected ? "#fafafa" : "white",
+                      border: isSelected ? "2px solid #1890ff" : "1px solid #e8e8e8",
+                      borderRadius: 8,
                     }}
                   >
-                    <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                    <Space direction="vertical" style={{ width: "100%" }} size={12}>
                       {/* Header */}
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Space>
                           {!processing && (
                             <Checkbox
@@ -258,77 +259,73 @@ export default function PostAllReplyModal({ visible, groups, onClose, onComplete
                               onChange={(e) => handleToggleComment(comment.id, e.target.checked)}
                             />
                           )}
-                          <MessageOutlined />
-                          <Space direction="vertical" size={2}>
-                            <Text strong style={{ fontSize: 13 }}>
-                              <UserOutlined style={{ marginRight: 4, fontSize: 12 }} />
-                              {comment.authorDisplayName}
-                            </Text>
-                            <Text type="secondary" style={{ fontSize: 11 }}>
-                              Video: {comment.videoTitle}
-                            </Text>
-                          </Space>
+                          <Text strong style={{ fontSize: 13 }}>
+                            {comment.authorDisplayName}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            • {comment.videoTitle}
+                          </Text>
                         </Space>
-                        <Space>
+                        <Space size={8}>
                           {commentStatus && getStatusIcon(commentStatus.status)}
                           <Text type="secondary" style={{ fontSize: 11 }}>
                             {format(new Date(comment.publishedAt), "dd/MM/yy HH:mm")}
                           </Text>
                         </Space>
-                      </Space>
+                      </div>
 
-                      {/* Comment Text */}
-                      <Card size="small" style={{ backgroundColor: "#fafafa" }}>
-                        <Paragraph style={{ margin: 0, fontSize: 12 }}>
-                          <Text strong style={{ fontSize: 11, color: "#8c8c8c" }}>Original Comment:</Text>
-                          <br />
-                          {comment.textOriginal}
-                        </Paragraph>
-                      </Card>
+                      {/* Comment and Reply in one box */}
+                      <div style={{
+                        padding: "12px",
+                        backgroundColor: "#f5f5f5",
+                        borderRadius: 6,
+                        borderLeft: "3px solid #d9d9d9"
+                      }}>
+                        {/* Original Comment */}
+                        <div style={{ marginBottom: 12 }}>
+                          <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+                            Comment:
+                          </Text>
+                          <Paragraph style={{ margin: "4px 0 0 0", fontSize: 12, color: "#595959" }}>
+                            {comment.textOriginal}
+                          </Paragraph>
+                        </div>
 
-                      {/* AI Reply */}
-                      <Card size="small" style={{ backgroundColor: "#e6f7ff" }}>
-                        <Space direction="vertical" style={{ width: "100%" }} size={4}>
-                          <Text strong style={{ fontSize: 11, color: "#1890ff" }}>AI Generated Reply:</Text>
-                          <Paragraph style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>
+                        {/* Divider */}
+                        <div style={{
+                          height: 1,
+                          backgroundColor: "#d9d9d9",
+                          margin: "12px 0"
+                        }} />
+
+                        {/* AI Reply */}
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+                            AI Reply:
+                          </Text>
+                          <Paragraph style={{ margin: "4px 0 0 0", fontSize: 12, whiteSpace: "pre-wrap" }}>
                             {comment.draft?.reply || <Text type="secondary">No reply</Text>}
                           </Paragraph>
 
-                          {/* Suggested Products */}
+                          {/* Suggested Products - inline */}
                           {products.length > 0 && (
-                            <div style={{ marginTop: 8 }}>
-                              <Text strong style={{ fontSize: 11 }}>Suggested Products:</Text>
-                              <ul style={{ marginTop: 4, marginBottom: 0, paddingLeft: 20 }}>
-                                {products.map((product: any, idx: number) => (
-                                  <li key={idx} style={{ fontSize: 11 }}>
-                                    <Text>{product.name}</Text>
-                                    {product.price && <Text type="secondary"> - {product.price}</Text>}
-                                  </li>
-                                ))}
-                              </ul>
+                            <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: "2px solid #d9d9d9" }}>
+                              <Text type="secondary" style={{ fontSize: 10 }}>
+                                Products: {products.map((p: any) => p.name).join(", ")}
+                              </Text>
                             </div>
                           )}
-
-                          {/* Scores */}
-                          <Space size={12} style={{ marginTop: 4 }}>
-                            <Text type="secondary" style={{ fontSize: 10 }}>
-                              Engagement: {(comment.draft?.engagementScore || 0).toFixed(2)}
-                            </Text>
-                            <Text type="secondary" style={{ fontSize: 10 }}>
-                              Relevance: {(comment.draft?.relevanceScore || 0).toFixed(2)}
-                            </Text>
-                          </Space>
-                        </Space>
-                      </Card>
+                        </div>
+                      </div>
 
                       {/* Status Message */}
                       {commentStatus && commentStatus.message && (
-                        <Alert
-                          message={commentStatus.message}
-                          type={commentStatus.status === "error" ? "error" : "success"}
-                          showIcon
+                        <Text
+                          type={commentStatus.status === "error" ? "danger" : "success"}
                           style={{ fontSize: 11 }}
-                        />
+                        >
+                          {commentStatus.status === "error" ? "❌" : "✅"} {commentStatus.message}
+                        </Text>
                       )}
                     </Space>
                   </Card>

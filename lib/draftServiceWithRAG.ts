@@ -5,11 +5,10 @@
  */
 
 import { prisma } from "@/lib/db";
-import { generateDraftsBatch } from "@/lib/ai";
 import { IndexStatus } from "@prisma/client";
-import { generateBatchAnswers } from "@/lib/rag/answer";
 import { ingestComment, ingestTranscript, ingestProduct } from "@/lib/rag/ingest";
 import { getIndexStats } from "@/lib/rag/retriever";
+import { generateCommentReply } from "@/lib/rag/comment-reply";
 
 /**
  * Generate drafts for comments using RAG
@@ -62,12 +61,8 @@ export async function generateDraftsForCommentsWithRAG() {
         select: {
           status: true,
           tags: true,
-          transcript: true,
           title: true,
-          channelName: true,
-          publishedAt: true,
-          duration: true,
-          viewCount: true,
+          chunksJSON: true,
         }
       });
 
@@ -76,74 +71,90 @@ export async function generateDraftsForCommentsWithRAG() {
         continue;
       }
 
-      // Check if transcript has actual content
-      if (!videoIndex.transcript || videoIndex.transcript.trim().length === 0) {
+      // Check if transcript has actual content (stored in chunksJSON)
+      if (!videoIndex.chunksJSON || videoIndex.chunksJSON.trim().length === 0) {
         console.log(`[draftService:RAG] ⏭️  Skipping video ${videoId} - transcript is empty`);
         continue;
       }
 
-      // 6. Auto-ingest transcript if not already in RAG
-      await ensureTranscriptIndexed(videoId, videoIndex);
+      // 8. Use comment-reply system (with shortURL) instead of generateBatchAnswers
+      console.log(`[draftService:RAG] 🤖 Generating ${videoComments.length} replies with shortURLs...`);
 
-      // 7. Auto-ingest products with matching tags if needed
-      const videoTags = videoIndex.tags || [];
-      await ensureProductsIndexed(videoTags);
+      let videoTokens = 0;
 
-      // 8. Use RAG to generate answers
-      console.log(`[draftService:RAG] 🤖 Using RAG to generate ${videoComments.length} answers...`);
+      for (const comment of videoComments) {
+        try {
+          const result = await generateCommentReply({
+            commentText: comment.textOriginal,
+            videoId: videoId,
+            includeProducts: true,
+            includeTranscripts: true,
+          });
 
-      const ragResponses = await generateBatchAnswers(
-        videoId,
-        videoComments.map(c => ({
-          commentId: c.id,
-          text: c.textOriginal
-        })),
-        {
-          includeProducts: true,
-          includeTranscripts: true,
-          temperature: 0.7,
+          // Get full product details from database
+          const productDetails = await Promise.all(
+            result.products.map(async (p) => {
+              const product = await prisma.product.findUnique({
+                where: { id: p.id },
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  affiliateUrl: true,
+                  shortURL: true,
+                }
+              });
+              return product;
+            })
+          );
+
+          const validProducts = productDetails.filter((p): p is NonNullable<typeof p> => p !== null);
+
+          // Save draft with shortURLs already inserted in replyText
+          await prisma.draft.upsert({
+            where: { commentId: comment.id },
+            update: {
+              reply: result.replyText, // Already has shortURLs inserted
+              status: "PENDING",
+              suggestedProducts: JSON.stringify(validProducts.map(p => ({
+                id: p.id,
+                name: p.name,
+                price: p.price,
+                url: p.affiliateUrl,
+                shortURL: p.shortURL,
+              }))),
+              engagementScore: 0.8,
+              relevanceScore: result.contexts[0]?.score || 0.7,
+            },
+            create: {
+              commentId: comment.id,
+              reply: result.replyText, // Already has shortURLs inserted
+              status: "PENDING",
+              suggestedProducts: JSON.stringify(validProducts.map(p => ({
+                id: p.id,
+                name: p.name,
+                price: p.price,
+                url: p.affiliateUrl,
+                shortURL: p.shortURL,
+              }))),
+              engagementScore: 0.8,
+              relevanceScore: result.contexts[0]?.score || 0.7,
+            }
+          });
+
+          generatedDrafts++;
+          videoTokens += result.tokenUsage.totalTokens;
+
+          console.log(`[draftService:RAG] ✅ Comment ${comment.id}: ${result.products.length} products, ${result.tokenUsage.totalTokens} tokens`);
+
+        } catch (error) {
+          console.error(`[draftService:RAG] ❌ Error generating reply for comment ${comment.id}:`, error);
+          // Continue with next comment
         }
-      );
-
-      console.log(`[draftService:RAG] ✅ RAG generated ${ragResponses.results.length} answers (${ragResponses.totalTokensUsed} tokens)`);
-
-      // 9. Save drafts to database
-      for (const result of ragResponses.results) {
-        const comment = videoComments.find(c => c.id === result.commentId);
-        if (!comment) continue;
-
-        // Extract product suggestions from contexts
-        const productContexts = result.contexts.filter(ctx => ctx.sourceType === "product");
-        const suggestedProducts = productContexts.map(ctx => ({
-          name: (ctx.meta as any).name,
-          url: (ctx.meta as any).url,
-          price: (ctx.meta as any).price,
-        }));
-
-        await prisma.draft.upsert({
-          where: { commentId: result.commentId },
-          update: {
-            reply: result.answer,
-            status: "PENDING",
-            suggestedProducts: JSON.stringify(suggestedProducts),
-            engagementScore: 0.8, // Default score - can be enhanced later
-            relevanceScore: result.contexts[0]?.score || 0.7,
-          },
-          create: {
-            commentId: result.commentId,
-            reply: result.answer,
-            status: "PENDING",
-            suggestedProducts: JSON.stringify(suggestedProducts),
-            engagementScore: 0.8,
-            relevanceScore: result.contexts[0]?.score || 0.7,
-          }
-        });
-
-        generatedDrafts++;
       }
 
       processedVideos++;
-      console.log(`[draftService:RAG] ✅ Saved ${ragResponses.results.length} drafts for video ${videoId}`);
+      console.log(`[draftService:RAG] ✅ Saved ${generatedDrafts} drafts for video ${videoId} (${videoTokens} tokens)`);
 
     } catch (error) {
       console.error(`[draftService:RAG] ❌ Error processing video ${videoId}:`, error);
@@ -268,12 +279,33 @@ async function ensureProductsIndexed(videoTags: string[]) {
 }
 
 /**
- * Generate drafts for a specific video using RAG
+ * Generate drafts for a specific video using RAG with comment-reply system
+ * This version uses generateCommentReply which includes automatic shortURL insertion
  */
 export async function generateDraftsForVideoWithRAG(videoId: string) {
-  console.log(`[draftService:RAG] 🚀 Starting draft generation for video ${videoId} with RAG...`);
+  console.log(`[draftService:RAG] 🚀 Starting draft generation for video ${videoId}...`);
 
-  // 1. Get comments for this video without drafts
+  // 1. Get video info
+  const videoIndex = await prisma.videoIndex.findUnique({
+    where: { videoId },
+    select: {
+      id: true,
+      videoId: true,
+      status: true,
+      title: true,
+      tags: true,
+    }
+  });
+
+  if (!videoIndex) {
+    throw new Error(`Video ${videoId} not found in index`);
+  }
+
+  if (videoIndex.status !== IndexStatus.READY) {
+    throw new Error(`Video ${videoId} is not ready (status: ${videoIndex.status})`);
+  }
+
+  // 2. Get comments without drafts for this video
   const comments = await prisma.comment.findMany({
     where: {
       videoId,
@@ -283,87 +315,99 @@ export async function generateDraftsForVideoWithRAG(videoId: string) {
   });
 
   if (comments.length === 0) {
-    return { success: true, message: "No comments to process for this video", generatedDrafts: 0 };
+    return { 
+      success: true, 
+      message: "No comments to process", 
+      generatedDrafts: 0 
+    };
   }
 
-  // 2. Check video transcript
-  const videoIndex = await prisma.videoIndex.findUnique({
-    where: { videoId },
-    select: {
-      status: true,
-      tags: true,
-      transcript: true,
-      title: true,
-      channelName: true,
-      publishedAt: true,
-      duration: true,
-      viewCount: true,
+  console.log(`[draftService:RAG] 📝 Found ${comments.length} comments without drafts`);
+
+  // 3. Generate drafts using comment-reply system (with shortURL)
+  let generatedDrafts = 0;
+  let totalTokens = 0;
+
+  for (const comment of comments) {
+    try {
+      console.log(`[draftService:RAG] 🤖 Generating reply for comment ${comment.id}...`);
+
+      const result = await generateCommentReply({
+        commentText: comment.textOriginal,
+        videoId: videoIndex.videoId,
+        includeProducts: true,
+        includeTranscripts: true,
+      });
+
+      // Get full product details from database
+      const productDetails = await Promise.all(
+        result.products.map(async (p) => {
+          const product = await prisma.product.findUnique({
+            where: { id: p.id },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              affiliateUrl: true,
+              shortURL: true,
+            }
+          });
+          return product;
+        })
+      );
+
+      const validProducts = productDetails.filter((p): p is NonNullable<typeof p> => p !== null);
+
+      // Save draft with shortURLs already inserted in replyText
+      await prisma.draft.upsert({
+        where: { commentId: comment.id },
+        update: {
+          reply: result.replyText, // Already has shortURLs inserted
+          status: "PENDING",
+          suggestedProducts: JSON.stringify(validProducts.map(p => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            url: p.affiliateUrl,
+            shortURL: p.shortURL,
+          }))),
+          engagementScore: 0.8,
+          relevanceScore: result.contexts[0]?.score || 0.7,
+        },
+        create: {
+          commentId: comment.id,
+          reply: result.replyText, // Already has shortURLs inserted
+          status: "PENDING",
+          suggestedProducts: JSON.stringify(validProducts.map(p => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            url: p.affiliateUrl,
+            shortURL: p.shortURL,
+          }))),
+          engagementScore: 0.8,
+          relevanceScore: result.contexts[0]?.score || 0.7,
+        }
+      });
+
+      generatedDrafts++;
+      totalTokens += result.tokenUsage.totalTokens;
+
+      console.log(`[draftService:RAG] ✅ Saved draft for comment ${comment.id} (${result.products.length} products, ${result.tokenUsage.totalTokens} tokens)`);
+
+    } catch (error) {
+      console.error(`[draftService:RAG] ❌ Error generating draft for comment ${comment.id}:`, error);
+      // Continue with next comment
     }
-  });
-
-  if (!videoIndex || videoIndex.status !== IndexStatus.READY) {
-    throw new Error(`Video ${videoId} does not have a ready transcript (status: ${videoIndex?.status || 'NOT_FOUND'})`);
   }
 
-  // Check if transcript has actual content
-  if (!videoIndex.transcript || videoIndex.transcript.trim().length === 0) {
-    throw new Error(`Video ${videoId} has no transcript content`);
-  }
-
-  // 3. Ensure data is indexed
-  await ensureTranscriptIndexed(videoId, videoIndex);
-  await ensureProductsIndexed(videoIndex.tags || []);
-
-  // 4. Use RAG to generate answers
-  const ragResponses = await generateBatchAnswers(
-    videoId,
-    comments.map(c => ({
-      commentId: c.id,
-      text: c.textOriginal
-    })),
-    {
-      includeProducts: true,
-      includeTranscripts: true,
-      temperature: 0.7,
-    }
-  );
-
-  // 5. Save drafts
-  for (const result of ragResponses.results) {
-    const productContexts = result.contexts.filter(ctx => ctx.sourceType === "product");
-    const suggestedProducts = productContexts.map(ctx => ({
-      name: (ctx.meta as any).name,
-      url: (ctx.meta as any).url,
-      price: (ctx.meta as any).price,
-    }));
-
-    await prisma.draft.upsert({
-      where: { commentId: result.commentId },
-      update: {
-        reply: result.answer,
-        status: "PENDING",
-        suggestedProducts: JSON.stringify(suggestedProducts),
-        engagementScore: 0.8,
-        relevanceScore: result.contexts[0]?.score || 0.7,
-      },
-      create: {
-        commentId: result.commentId,
-        reply: result.answer,
-        status: "PENDING",
-        suggestedProducts: JSON.stringify(suggestedProducts),
-        engagementScore: 0.8,
-        relevanceScore: result.contexts[0]?.score || 0.7,
-      }
-    });
-  }
-
-  const message = `Generated ${ragResponses.results.length} draft(s) for video ${videoId} using RAG (${ragResponses.totalTokensUsed} tokens)`;
+  const message = `Generated ${generatedDrafts} draft(s) for video ${videoId} with shortURLs (${totalTokens} tokens)`;
   console.log(`[draftService:RAG] ✅ ${message}`);
 
   return {
     success: true,
     message,
-    generatedDrafts: ragResponses.results.length,
-    tokensUsed: ragResponses.totalTokensUsed,
+    generatedDrafts,
+    tokensUsed: totalTokens,
   };
 }

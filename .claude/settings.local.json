@@ -31,7 +31,12 @@
       "Bash(npx tsc:*)",
       "Bash(npx prisma studio:*)",
       "Bash(timeout 5 bash:*)",
-      "Bash(powershell -Command \"Get-Process prisma,node 2>$null | Select-Object Id,ProcessName,StartTime | Format-Table\")"
+      "Bash(powershell -Command \"Get-Process prisma,node 2>$null | Select-Object Id,ProcessName,StartTime | Format-Table\")",
+      "Bash(powershell:*)",
+      "Bash(npm install:*)",
+      "Bash(npx playwright:*)",
+      "Bash(node -r dotenv/config -r esbuild-register scripts/test-chatCompletion.ts:*)",
+      "Bash(node -e:*)"
     ],
     "deny": [],
     "ask": []

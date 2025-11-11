@@ -61,7 +61,7 @@ export async function generateCommentReply(
     videoId,
     includeProducts = true,
     includeTranscripts = true,
-    maxTokens = 500,
+    maxTokens = 3000, // Increased for GPT-5 reasoning model (needs tokens for reasoning + output)
     model
   } = request;
 
@@ -74,25 +74,25 @@ export async function generateCommentReply(
   const contexts = await smartSearchV3(commentText, videoId, {
     topK: 6,
     includeTranscripts,
-    includeProducts
+    includeProducts,
+    minScore: 0.2  // Lower threshold to find more contexts (was 0.3)
   });
 
   console.log(`[CommentReply] Retrieved ${contexts.length} contexts`);
 
+  // Log top scores for debugging
+  if (contexts.length > 0) {
+    const topScores = contexts.slice(0, 3).map(c => c.score.toFixed(3)).join(', ');
+    console.log(`[CommentReply] Top scores: ${topScores}`);
+  }
+
   if (contexts.length === 0) {
-    // No context found - return polite decline
-    return {
-      replyText: "ขอบคุณที่ติดตามช่องนะครับ คำถามนี้ไม่มีข้อมูลในวิดีโอนี้ ลองดูวิดีโออื่นในช่องได้เลยครับ",
-      products: [],
-      contexts: [],
-      tokenUsage: {
-        queryTokens: countTokens(commentText),
-        systemTokens: countTokens(COMMENT_REPLY_SYSTEM_PROMPT),
-        contextTokens: 0,
-        totalTokens: countTokens(commentText) + countTokens(COMMENT_REPLY_SYSTEM_PROMPT)
-      },
-      model: "gpt-4o-mini"
-    };
+    // No context found - use general knowledge instead of refusing
+    console.warn(`[CommentReply] No contexts found for: "${commentText.substring(0, 50)}..."`);
+    console.warn(`[CommentReply] Video: ${videoId}, includeTranscripts: ${includeTranscripts}, includeProducts: ${includeProducts}`);
+
+    // Still try to answer using general knowledge (GPT-5 can handle it)
+    console.log(`[CommentReply] Attempting answer with general knowledge (no RAG context)`);
   }
 
   // 2. Build suggested products pool (if any)
@@ -139,7 +139,9 @@ export async function generateCommentReply(
     return `[${idx + 1}] ${sourceLabel} (score: ${ctx.score.toFixed(2)}):\n${ctx.text}`;
   });
 
-  const contextText = contextSections.join("\n\n");
+  const contextText = contexts.length > 0
+    ? contextSections.join("\n\n")
+    : "(ไม่มีข้อมูลจากวิดีโอ - ใช้ความรู้ทั่วไปในการตอบ)";
 
   // 4. Build suggested products section
   const productsText = suggestedProducts.length > 0
@@ -186,7 +188,7 @@ ${contextText}${productsText}${guidanceText}`;
     }
   ];
 
-  console.log(`[CommentReply] Calling AI (${countTokens(systemPrompt + commentText)} tokens)...`);
+  console.log(`[CommentReply] Calling AI with model: ${model || 'default'}, maxTokens: ${maxTokens}, estimated input tokens: ${countTokens(systemPrompt + commentText)}`);
 
   // 6. Generate reply with JSON mode enabled and preferred temperature
   const rawResponse = await chatCompletion(messages, {
@@ -210,7 +212,13 @@ ${contextText}${productsText}${guidanceText}`;
       cleanedResponse = cleanedResponse.replace(/```\n?/g, "");
     }
 
-  const parsed = JSON.parse(cleanedResponse);
+    // Check if response is empty or incomplete
+    if (!cleanedResponse || cleanedResponse.length < 10) {
+      console.error("[CommentReply] Empty or too short response:", cleanedResponse);
+      throw new Error("AI response is empty or too short");
+    }
+
+    const parsed = JSON.parse(cleanedResponse);
 
     replyText = parsed.reply_text || parsed.replyText || "";
   products = parsed.products || [];
@@ -246,12 +254,103 @@ ${contextText}${productsText}${guidanceText}`;
       // Non-fatal: keep original replyText if sanitization fails
     }
 
+    // Add shortURL to product recommendations in reply text if not already present
+    if (products.length > 0 && replyText.includes("สินค้าแนะนำ")) {
+      console.log(`[CommentReply] Attempting to add shortURLs for ${products.length} products`);
+      try {
+        // Build a map of product IDs to their info (name + shortURL)
+        const productInfoMap = new Map<string, { name: string; url: string }>();
+        for (const prod of products) {
+          const suggestedProduct = suggestedProducts.find(p => p.id === prod.id);
+          if (suggestedProduct) {
+            productInfoMap.set(prod.id, {
+              name: suggestedProduct.name,
+              url: suggestedProduct.url
+            });
+            console.log(`[CommentReply] Product: ${suggestedProduct.name} -> ${suggestedProduct.url}`);
+          }
+        }
+
+        // Check each product and add shortURL if missing
+        for (const [productId, info] of productInfoMap) {
+          // Extract key parts from product name for flexible matching
+          // Remove prefix in brackets like [แนะนำ], [สินค้ามายด์]
+          let nameForMatching = info.name.replace(/^\[[^\]]+\]/g, '').trim();
+          
+          // Get main brand and model (first few significant words)
+          // e.g., "ASUS VIVOBOOK S16" or "MSI THIN 15"
+          const nameParts = nameForMatching.split(/\s+/);
+          const significantParts = nameParts.slice(0, Math.min(3, nameParts.length));
+          
+          // Try multiple patterns to match
+          const patterns: RegExp[] = [];
+          
+          // Pattern 1: Match with prefix removal - line contains model number
+          // e.g., "- [prefix]เอสุส รีวิวมือ ASUS VIVOBOOK 16 X1605VA-MB735WA"
+          // Look for pattern: Letter+Digit+Hyphen (e.g., S3607VA-RP575WA)
+          const modelMatch = nameForMatching.match(/[A-Z]\d+[A-Z]*-[A-Z0-9]+/);
+          if (modelMatch) {
+            const model = modelMatch[0];
+            console.log(`[CommentReply] Extracted model: ${model} from ${nameForMatching}`);
+            // Escape special characters in model number
+            const escapedModel = model.replace(/[-]/g, '\\-');
+            // Match line with this exact model number, followed by price, without URL
+            patterns.push(new RegExp(`(-[^\\n]*${escapedModel}[^\\n]*?บาท)(?![^\\n]*https?://)`, 'gi'));
+          } else {
+            console.log(`[CommentReply] No model match found in: ${nameForMatching}`);
+          }
+          
+          // Pattern 2: Match first 2-3 significant words (brand + series)
+          if (significantParts.length >= 2) {
+            const keyWords = significantParts.slice(0, 2).join('.*?');
+            patterns.push(new RegExp(`(-[^\\n]*${keyWords}[^\\n]*?บาท)(?![^\\n]*https?://)`, 'gi'));
+          }
+          
+          // Apply patterns
+          for (const pattern of patterns) {
+            const beforeReplace = replyText;
+            replyText = replyText.replace(pattern, (match) => {
+              console.log(`[CommentReply] Match found: "${match.substring(0, 50)}..."`);
+              // Add shortURL if not present in this line
+              return `${match} ${info.url}`;
+            });
+            
+            // If we successfully added URL, break (don't try other patterns)
+            if (replyText !== beforeReplace) {
+              console.log(`[CommentReply] Successfully added shortURL: ${info.url}`);
+              break;
+            }
+          }
+        }
+        
+        console.log(`[CommentReply] Finished adding shortURLs to product recommendations`);
+      } catch (err) {
+        console.error(`[CommentReply] Failed to add shortURLs to reply text:`, err);
+      }
+    } else {
+      console.log(`[CommentReply] Skipping shortURL addition: products.length=${products.length}, has "สินค้าแนะนำ"=${replyText.includes("สินค้าแนะนำ")}`);
+    }
+
   } catch (error) {
     console.error(`[CommentReply] JSON parsing failed:`, error);
-    console.error(`[CommentReply] Raw response:`, rawResponse);
+    console.error(`[CommentReply] Raw response (first 500 chars):`, rawResponse.substring(0, 500));
+    console.error(`[CommentReply] Raw response (full):`, rawResponse);
 
-    // Fallback: use raw response as reply text
-    replyText = rawResponse;
+    // Fallback: try to extract reply_text from partial JSON
+    try {
+      const replyMatch = rawResponse.match(/"reply_text"\s*:\s*"([^"]*)"/);
+      if (replyMatch && replyMatch[1]) {
+        replyText = replyMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+        console.log(`[CommentReply] Extracted reply_text from partial JSON (${replyText.length} chars)`);
+      } else {
+        // Last resort: use raw response as reply
+        replyText = "ขออภัยครับ ระบบประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+        console.error(`[CommentReply] Could not extract reply_text, using fallback message`);
+      }
+    } catch (extractError) {
+      replyText = "ขออภัยครับ ระบบประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+      console.error(`[CommentReply] Fallback extraction failed:`, extractError);
+    }
     products = [];
   }
 

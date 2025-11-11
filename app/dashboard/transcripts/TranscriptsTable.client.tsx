@@ -82,7 +82,22 @@ export default function TranscriptsTable() {
     setLoadingRunAll(true);
     try {
       const response = await axios.post("/api/transcripts/ensure-missing");
-      message.success(`Queued ${response.data.count} video(s) for indexing`);
+      const { count, metadataUpdated } = response.data;
+
+      const messages = [];
+      if (count > 0) {
+        messages.push(`Queued ${count} video(s) for indexing`);
+      }
+      if (metadataUpdated > 0) {
+        messages.push(`Updated metadata for ${metadataUpdated} video(s)`);
+      }
+
+      if (messages.length > 0) {
+        message.success(messages.join(" • "));
+      } else {
+        message.info("All videos are up to date");
+      }
+
       mutate();
     } catch (error) {
       message.error("Failed to queue missing videos");

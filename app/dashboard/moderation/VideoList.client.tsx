@@ -6,7 +6,7 @@ import { FilterOutlined, SortAscendingOutlined, ClockCircleOutlined, CheckCircle
 import { format } from "date-fns";
 import type { Draft, Comment } from "@prisma/client";
 
-const { Text, Link: AntLink } = Typography;
+const { Text } = Typography;
 
 type CommentRow = Comment & {
   draft: Draft | null;
@@ -260,59 +260,46 @@ export default function VideoList({ groups, selectedVideoId, onSelectVideo }: Vi
                 }}
               >
                 <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                  <AntLink
-                    href={`https://www.youtube.com/watch?v=${group.videoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ fontWeight: 500, fontSize: 14 }}
-                  >
+                  <Text style={{ fontWeight: 500, fontSize: 14 }}>
                     {group.videoTitle}
-                  </AntLink>
+                  </Text>
 
-                  {/* Single line: Date / Video Status / Comment Statuses / Total */}
-                  <Space size={8} wrap style={{ fontSize: 11 }}>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      📅 {group.videoPublishedAt ? format(new Date(group.videoPublishedAt), "dd/MM/yy") : "N/A"}
-                    </Text>
+                  {/* Single line: Date / Video Status / Comment Statuses (Draft & Pending only) */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                    <Space size={8} style={{ fontSize: 11 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        📅 {group.videoPublishedAt ? format(new Date(group.videoPublishedAt), "dd/MM/yy") : "N/A"}
+                      </Text>
 
-                    {group.hasTranscript ? (
-                      <Space size={4}>
-                        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 12 }} />
-                        <Text style={{ fontSize: 11, color: "#52c41a" }}>พร้อม</Text>
-                      </Space>
-                    ) : (
-                      <Space size={4}>
-                        <MinusCircleOutlined style={{ color: "#fa8c16", fontSize: 12 }} />
-                        <Text style={{ fontSize: 11, color: "#fa8c16" }}>ไม่มี Script</Text>
-                      </Space>
-                    )}
+                      {group.hasTranscript ? (
+                        <Space size={4}>
+                          <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 12 }} />
+                          <Text style={{ fontSize: 11, color: "#52c41a" }}>พร้อม</Text>
+                        </Space>
+                      ) : (
+                        <Space size={4}>
+                          <MinusCircleOutlined style={{ color: "#fa8c16", fontSize: 12 }} />
+                          <Text style={{ fontSize: 11, color: "#fa8c16" }}>ไม่มี Script</Text>
+                        </Space>
+                      )}
+                    </Space>
 
-                    <Text type="secondary" style={{ fontSize: 11 }}>|</Text>
+                    <Space size={8} style={{ fontSize: 11 }}>
+                      {counts.noDraft > 0 && (
+                        <Space size={4}>
+                          <FileTextOutlined style={{ color: "#8c8c8c", fontSize: 12 }} />
+                          <Text style={{ fontSize: 11, color: "#8c8c8c" }}>{counts.noDraft}</Text>
+                        </Space>
+                      )}
 
-                    {counts.pending > 0 && (
-                      <Space size={4}>
-                        <ClockCircleOutlined style={{ color: "#fa8c16", fontSize: 12 }} />
-                        <Text style={{ fontSize: 11, color: "#fa8c16" }}>{counts.pending}</Text>
-                      </Space>
-                    )}
-
-                    {counts.noDraft > 0 && (
-                      <Space size={4}>
-                        <FileTextOutlined style={{ color: "#8c8c8c", fontSize: 12 }} />
-                        <Text style={{ fontSize: 11, color: "#8c8c8c" }}>{counts.noDraft}</Text>
-                      </Space>
-                    )}
-
-                    {counts.posted > 0 && (
-                      <Space size={4}>
-                        <SendOutlined style={{ color: "#1890ff", fontSize: 12 }} />
-                        <Text style={{ fontSize: 11, color: "#1890ff" }}>{counts.posted}</Text>
-                      </Space>
-                    )}
-
-                    <Text type="secondary" style={{ fontSize: 11 }}>รวม {counts.total}</Text>
-                  </Space>
+                      {counts.pending > 0 && (
+                        <Space size={4}>
+                          <ClockCircleOutlined style={{ color: "#fa8c16", fontSize: 12 }} />
+                          <Text style={{ fontSize: 11, color: "#fa8c16" }}>{counts.pending}</Text>
+                        </Space>
+                      )}
+                    </Space>
+                  </div>
                 </Space>
               </List.Item>
             );

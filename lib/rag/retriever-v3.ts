@@ -107,8 +107,9 @@ export async function smartSearchV3(
     topK?: number;
     includeTranscripts?: boolean;
     includeProducts?: boolean;
+    minScore?: number;
   } = {}
 ): Promise<SearchResult[]> {
-  // Use two-stage with intent-aware filtering
+  // Use two-stage with intent-aware filtering (pass minScore through)
   return twoStageHybridSearch(query, videoId, options);
 }

@@ -1,16 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Space, Tag, Typography, Card, Popconfirm, message, Empty, Input } from "antd";
+import { Button, Space, Tag, Typography, Card, Popconfirm, message, Empty, Input, Tooltip } from "antd";
 import { CheckOutlined, CloseOutlined, SendOutlined, EditOutlined, ReloadOutlined, SaveOutlined, ClockCircleOutlined, CheckCircleOutlined as CheckCircleFilled, CloseCircleOutlined, FileTextOutlined } from "@ant-design/icons";
 import { format } from "date-fns";
 import type { Draft, Comment } from "@prisma/client";
 import axios from "axios";
-import AIContextModal from "./AIContextModal";
 
 const { TextArea } = Input;
 
-const { Text, Title, Paragraph } = Typography;
+const { Text, Title, Paragraph, Link } = Typography;
 
 type CommentRow = Comment & {
   draft: Draft | null;
@@ -36,10 +35,8 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [editedReply, setEditedReply] = useState<string>("");
   const [editedProducts, setEditedProducts] = useState<Array<{ name: string; url: string; price: string }>>([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [contextData, setContextData] = useState<any>(null);
-  const [contextLoading, setContextLoading] = useState(false);
-  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
+  const [hiddenCommentIds, setHiddenCommentIds] = useState<Set<string>>(new Set());
 
   if (!group) {
     return (
@@ -49,43 +46,29 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
     );
   }
 
-  const commentsWithoutDrafts = group.comments.filter((c) => !c.draft);
+  // Filter out rejected comments for display
+  const visibleComments = group.comments.filter((c) => c.draft?.status !== "REJECTED");
 
-  async function handlePreviewContext() {
-    try {
-      setContextLoading(true);
-      const response = await axios.post("/api/drafts/preview-context", { videoId: group!.videoId });
-      setContextData(response.data.data);
-      setModalVisible(true);
-    } catch (error: any) {
-      console.error(error);
-      const errorMsg = error.response?.data?.error || "ไม่สามารถดึงข้อมูล context ได้";
-      message.error(errorMsg);
-    } finally {
-      setContextLoading(false);
-    }
-  }
+  // Count comments without drafts (excluding hidden)
+  const commentsWithoutDrafts = group.comments.filter((c) =>
+    !c.draft && !hiddenCommentIds.has(c.id)
+  );
 
-  async function handleConfirmSendToAI() {
+  const pendingDrafts = group.comments.filter((c) => c.draft?.status === "PENDING");
+
+  async function handleSendToAI() {
     try {
-      setConfirmLoading(true);
+      setLoading(true);
       const response = await axios.post("/api/drafts/generate-video", { videoId: group!.videoId });
       message.success(response.data.message || "สร้างร่างคำตอบสำเร็จ");
-      setModalVisible(false);
-      setContextData(null);
       onRefresh();
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.response?.data?.error || "ไม่สามารถสร้างร่างคำตอบได้";
       message.error(errorMsg);
     } finally {
-      setConfirmLoading(false);
+      setLoading(false);
     }
-  }
-
-  function handleCancelModal() {
-    setModalVisible(false);
-    setContextData(null);
   }
 
   async function handleReject(draftId: string) {
@@ -122,12 +105,11 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
     }
   }
 
-
-  function handleStartEdit(draftId: string, currentReply: string, currentProducts: Array<{ name: string; url: string; price: string }>) {
-    console.log('handleStartEdit called:', { draftId, currentReply, currentProducts, currentEditingDraftId: editingDraftId });
+  async function handleStartEdit(draftId: string, currentReply: string, suggestedProducts: Array<{ name: string; url: string; price: string }>) {
+    console.log('handleStartEdit called:', { draftId, currentReply, suggestedProducts, currentEditingDraftId: editingDraftId });
     setEditingDraftId(draftId);
     setEditedReply(currentReply);
-    setEditedProducts(currentProducts);
+    setEditedProducts(suggestedProducts);
     console.log('After setState:', { newEditingDraftId: draftId });
   }
 
@@ -161,6 +143,15 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
     }
   }
 
+  function handleHideComment(commentId: string) {
+    setHiddenCommentIds((prev) => {
+      const next = new Set(prev);
+      next.add(commentId);
+      return next;
+    });
+    message.success("ซ่อน comment แล้ว");
+  }
+
   async function handleRefreshComment(commentId: string) {
     try {
       setActionLoading(commentId);
@@ -184,18 +175,30 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
       <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0", background: "#fafafa" }}>
         <Space direction="vertical" style={{ width: "100%" }} size={8}>
           <Title level={5} style={{ margin: 0 }}>
-            {group.videoTitle}
+            <Link
+              href={`https://www.youtube.com/watch?v=${group.videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {group.videoTitle}
+            </Link>
           </Title>
+
           <Space>
             <Button
-              type="primary"
+              type="text"
               icon={<SendOutlined />}
-              onClick={handlePreviewContext}
-              loading={contextLoading}
+              onClick={handleSendToAI}
+              loading={loading}
               disabled={!group.hasTranscript || commentsWithoutDrafts.length === 0}
               size="small"
+              style={{
+                color: !group.hasTranscript || commentsWithoutDrafts.length === 0 ? undefined : '#1890ff',
+                fontWeight: 500,
+                fontSize: '13px'
+              }}
             >
-              Send to AI ({commentsWithoutDrafts.length})
+              AI Proceed ({commentsWithoutDrafts.length})
             </Button>
             {!group.hasTranscript && (
               <Text type="secondary" style={{ fontSize: 12 }}>
@@ -209,7 +212,12 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
       {/* Comments List */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
         <Space direction="vertical" style={{ width: "100%" }} size={16}>
-          {group.comments.map((comment) => {
+          {visibleComments.map((comment) => {
+            // Skip hidden comments
+            if (hiddenCommentIds.has(comment.id)) {
+              return null;
+            }
+
             const hasDraft = !!comment.draft;
             const isPending = comment.draft?.status === "PENDING";
 
@@ -270,6 +278,25 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
                       )}
                     </Space>
 
+                    {!hasDraft && (
+                      <Popconfirm
+                        title="ซ่อน comment นี้?"
+                        description="Comment จะถูกซ่อนจากรายการ"
+                        onConfirm={() => handleHideComment(comment.id)}
+                        okText="ใช่"
+                        cancelText="ไม่"
+                      >
+                        <Tooltip title="ซ่อน comment">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<CloseOutlined />}
+                            style={{ color: '#ff4d4f', fontSize: '14px' }}
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    )}
+
                     {isPending && (
                       <Space size={4}>
                         <Popconfirm
@@ -279,14 +306,15 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
                           okText="ใช่"
                           cancelText="ไม่"
                         >
-                          <Button
-                            size="small"
-                            danger
-                            icon={<CloseOutlined />}
-                            loading={actionLoading === comment.draft!.id}
-                          >
-                            ปฏิเสธ
-                          </Button>
+                          <Tooltip title="ปฏิเสธ">
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<CloseOutlined />}
+                              loading={actionLoading === comment.draft!.id}
+                              style={{ color: '#ff4d4f', fontSize: '14px' }}
+                            />
+                          </Tooltip>
                         </Popconfirm>
 
                         <Popconfirm
@@ -296,14 +324,15 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
                           okText="ใช่"
                           cancelText="ไม่"
                         >
-                          <Button
-                            size="small"
-                            type="primary"
-                            icon={<CheckOutlined />}
-                            loading={actionLoading === comment.draft!.id}
-                          >
-                            โพสต์
-                          </Button>
+                          <Tooltip title="โพสต์">
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<CheckOutlined />}
+                              loading={actionLoading === comment.draft!.id}
+                              style={{ color: '#52c41a', fontSize: '14px' }}
+                            />
+                          </Tooltip>
                         </Popconfirm>
                       </Space>
                     )}
@@ -318,49 +347,72 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
                       size="small"
                       style={{ backgroundColor: "#fafafa", marginTop: 8, borderRadius: 6 }}
                       bodyStyle={{ padding: 8 }}
+                      onMouseEnter={() => setHoveredCardId(comment.id)}
+                      onMouseLeave={() => setHoveredCardId(null)}
                     >
-                          <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                            <div>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                                <Text strong style={{ fontSize: 12 }}>
-                                  คำตอบจาก AI:
-                                </Text>
-                                <Space size={4}>
-                                  {editingDraftId === comment.draft?.id ? (
+                      <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                            <Text strong style={{ fontSize: 12 }}>
+                              คำตอบจาก AI:
+                            </Text>
+                            <Space size={4}>
+                              {editingDraftId === comment.draft?.id ? (
                                     <>
-                                      <Button
-                                        size="small"
-                                        icon={<SaveOutlined />}
-                                        type="primary"
-                                        onClick={() => handleSaveEdit(comment.draft!.id)}
-                                        loading={actionLoading === comment.draft!.id}
-                                      >
-                                        บันทึก
-                                      </Button>
-                                      <Button size="small" onClick={handleCancelEdit}>
-                                        ยกเลิก
-                                      </Button>
+                                      <Tooltip title="บันทึก">
+                                        <Button
+                                          size="small"
+                                          icon={<SaveOutlined />}
+                                          type="text"
+                                          onClick={() => handleSaveEdit(comment.draft!.id)}
+                                          loading={actionLoading === comment.draft!.id}
+                                          style={{ color: '#52c41a', fontSize: '14px' }}
+                                        />
+                                      </Tooltip>
+                                      <Tooltip title="ยกเลิก">
+                                        <Button
+                                          size="small"
+                                          type="text"
+                                          icon={<CloseOutlined />}
+                                          onClick={handleCancelEdit}
+                                          style={{ fontSize: '14px' }}
+                                        />
+                                      </Tooltip>
                                     </>
                                   ) : (
                                     <>
-                                      <Button
-                                        size="small"
-                                        icon={<EditOutlined />}
-                                        onClick={() => {
-                                          console.log('Edit clicked, draft:', comment.draft);
-                                          handleStartEdit(comment.draft!.id, comment.draft!.reply || "", suggestedProducts);
-                                        }}
-                                      >
-                                        แก้ไข
-                                      </Button>
-                                      <Button
-                                        size="small"
-                                        icon={<ReloadOutlined />}
-                                        onClick={() => handleRefreshComment(comment.id)}
-                                        loading={actionLoading === comment.id}
-                                      >
-                                        Refresh
-                                      </Button>
+                                      <Tooltip title="แก้ไข">
+                                        <Button
+                                          size="small"
+                                          icon={<EditOutlined />}
+                                          type="text"
+                                          onClick={() => {
+                                            console.log('Edit clicked, draft:', comment.draft);
+                                            handleStartEdit(comment.draft!.id, comment.draft!.reply || "", suggestedProducts);
+                                          }}
+                                          style={{
+                                            color: '#1890ff',
+                                            fontSize: '14px',
+                                            opacity: hoveredCardId === comment.id ? 1 : 0,
+                                            transition: 'opacity 0.2s'
+                                          }}
+                                        />
+                                      </Tooltip>
+                                      <Tooltip title="Refresh">
+                                        <Button
+                                          size="small"
+                                          icon={<ReloadOutlined />}
+                                          type="text"
+                                          onClick={() => handleRefreshComment(comment.id)}
+                                          loading={actionLoading === comment.id}
+                                          style={{
+                                            color: '#1890ff',
+                                            fontSize: '14px',
+                                            opacity: hoveredCardId === comment.id ? 1 : 0,
+                                            transition: 'opacity 0.2s'
+                                          }}
+                                        />
+                                      </Tooltip>
                                     </>
                                   )}
                                 </Space>
@@ -484,21 +536,14 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
       </div>
 
       {/* Footer */}
-      <div style={{ padding: "12px 16px", borderTop: "1px solid #f0f0f0", background: "#fafafa" }}>
+      <div style={{ padding: "12px 16px", borderTop: "1px solid #f0f0f0", background: "#fafafa", display: "flex", justifyContent: "flex-end", gap: "12px" }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          {group.comments.length} Comments
+          Draft: {commentsWithoutDrafts.length}
+        </Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Pending: {pendingDrafts.length}
         </Text>
       </div>
-
-      {/* AI Context Modal */}
-      <AIContextModal
-        visible={modalVisible}
-        data={contextData}
-        loading={contextLoading}
-        onConfirm={handleConfirmSendToAI}
-        onCancel={handleCancelModal}
-        confirmLoading={confirmLoading}
-      />
     </div>
   );
 }

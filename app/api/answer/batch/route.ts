@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       commentIds.includes(c.commentId)
     );
 
-    // Generate batch answers
+    // Generate batch answers (now includes products in JSON format)
     const response = await generateBatchAnswers(
       videoId,
       requestedComments,
@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
         temperature,
       }
     );
+
+    console.log(`[api] ✅ Generated ${response.results.length} answers with ${response.totalTokensUsed} tokens`);
 
     return NextResponse.json(response);
   } catch (error) {

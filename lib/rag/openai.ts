@@ -67,6 +67,81 @@ export async function createEmbeddings(texts: string[]): Promise<number[][]> {
 /**
  * Generate chat completion
  */
+async function chatCompletionViaResponses(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  options?: {
+    model?: string;
+    maxTokens?: number;
+    jsonMode?: boolean;
+  }
+): Promise<string> {
+  const model = options?.model || CHAT_MODEL;
+
+  const input = messages.map((message) => {
+    const content = Array.isArray(message.content)
+      ? message.content
+          .map((part) => {
+            if (typeof part === "string") {
+              return part;
+            }
+            if ("text" in part && typeof part.text === "string") {
+              return part.text;
+            }
+            // Fallback to stringifying unsupported parts
+            return JSON.stringify(part);
+          })
+          .join("\n")
+      : String(message.content ?? "");
+
+    return {
+      role: message.role,
+      content,
+    };
+  });
+
+  const requestParams: Record<string, any> = {
+    model,
+    input,
+    reasoning: {
+      effort: "low",
+    },
+    text: {
+      verbosity: options?.jsonMode ? "low" : "medium",
+    },
+  };
+
+  // GPT-5 reasoning model needs more tokens (for both reasoning + output)
+  // Default to 5000 if not specified, allowing enough for reasoning tokens
+  if (options?.maxTokens) {
+    requestParams.max_output_tokens = options.maxTokens;
+  } else {
+    requestParams.max_output_tokens = 5000;
+  }
+
+  if (options?.jsonMode) {
+    requestParams.text.format = { type: "json_object" };
+  }
+
+  try {
+    const response = await (openai as any).responses.create(requestParams);
+
+    if (typeof response?.output_text === "string" && response.output_text.trim().length > 0) {
+      return response.output_text.trim();
+    }
+
+    const messageOutput = response?.output?.find((item: any) => item.type === "message");
+    const textContent = messageOutput?.content?.find((c: any) => c.type === "output_text");
+    if (textContent?.text) {
+      return String(textContent.text);
+    }
+
+    return "";
+  } catch (error: any) {
+    console.error("[openai:gpt-5] Responses API error:", error);
+    throw new Error(`Failed to generate GPT-5 completion: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
+}
+
 export async function chatCompletion(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   options?: {
@@ -77,6 +152,15 @@ export async function chatCompletion(
   }
 ): Promise<string> {
   const model = options?.model || CHAT_MODEL;
+
+  // GPT-5 uses Responses API instead of Chat Completions API
+  if (model.startsWith("gpt-5")) {
+    return chatCompletionViaResponses(messages, {
+      model,
+      maxTokens: options?.maxTokens,
+      jsonMode: options?.jsonMode,
+    });
+  }
 
   try {
     const requestParams: any = {

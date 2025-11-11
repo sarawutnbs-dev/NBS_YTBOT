@@ -4,12 +4,12 @@ import { useState } from "react";
 import useSWR from "swr";
 import axios from "axios";
 import { Button, Space } from "antd";
-import { RocketOutlined, SendOutlined } from "@ant-design/icons";
+import { CheckOutlined, SendOutlined } from "@ant-design/icons";
 import type { Draft, Comment } from "@prisma/client";
 import VideoList from "./VideoList.client";
 import CommentDetail from "./CommentDetail.client";
-import AIProceedModal from "./AIProceedModal";
 import PostAllReplyModal from "./PostAllReplyModal";
+import AIProceedBatchModal from "./AIProceedBatchModal";
 
 type CommentRow = Comment & {
   draft: Draft | null;
@@ -28,8 +28,8 @@ const fetcher = (url: string) => axios.get(url).then((res) => res.data);
 
 export default function ModerationLayout() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
-  const [aiProceedModalVisible, setAiProceedModalVisible] = useState(false);
-  const [postAllReplyModalVisible, setPostAllReplyModalVisible] = useState(false);
+  const [showPostAllModal, setShowPostAllModal] = useState(false);
+  const [showAIProceedBatchModal, setShowAIProceedBatchModal] = useState(false);
 
   const { data: groups = [], mutate } = useSWR<VideoGroup[]>("/api/comments/grouped", fetcher, {
     refreshInterval: 0,
@@ -43,54 +43,55 @@ export default function ModerationLayout() {
     setSelectedVideoId(groups[0].videoId);
   }
 
-  const eligibleVideosCount = groups.filter((group) => {
-    const commentsWithoutDrafts = group.comments.filter((c) => !c.draft);
-    return group.hasTranscript && commentsWithoutDrafts.length > 0;
-  }).length;
+  // Count pending drafts across all videos
+  const pendingDraftsCount = groups.reduce((count, group) => {
+    return count + group.comments.filter((c) => c.draft?.status === "PENDING").length;
+  }, 0);
 
-  const pendingCommentsCount = groups.reduce((count, group) => {
-    return count + group.comments.filter((c) => c.draft && c.draft.status === "PENDING").length;
+  // Count comments without drafts across all videos with transcripts
+  const commentsWithoutDraftsCount = groups.reduce((count, group) => {
+    if (!group.hasTranscript) return count;
+    return count + group.comments.filter((c) => !c.draft).length;
   }, 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", width: "100%", overflow: "hidden" }}>
-      {/* Top Bar with AI Proceed Button */}
-      <div style={{
-        padding: "12px 16px",
-        borderBottom: "1px solid #f0f0f0",
-        background: "#fafafa",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center"
-      }}>
-        <div style={{ fontSize: 18, fontWeight: 600 }}>
-          Comment Moderation
-        </div>
+      {/* Top Header Bar */}
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", background: "#fafafa", display: "flex", justifyContent: "flex-end" }}>
         <Space>
           <Button
-            type="primary"
-            icon={<RocketOutlined />}
-            onClick={() => setAiProceedModalVisible(true)}
-            disabled={eligibleVideosCount === 0}
+            type="text"
+            icon={<SendOutlined />}
+            onClick={() => setShowAIProceedBatchModal(true)}
+            disabled={commentsWithoutDraftsCount === 0}
+            size="small"
+            style={{
+              color: commentsWithoutDraftsCount === 0 ? undefined : '#1890ff',
+              fontWeight: 500,
+              fontSize: '13px'
+            }}
           >
-            AI Proceed ({eligibleVideosCount})
+            AI Proceed Batch ({commentsWithoutDraftsCount})
           </Button>
           <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={() => setPostAllReplyModalVisible(true)}
-            disabled={pendingCommentsCount === 0}
-            style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+            type="text"
+            icon={<CheckOutlined />}
+            onClick={() => setShowPostAllModal(true)}
+            disabled={pendingDraftsCount === 0}
+            size="small"
+            style={{
+              color: pendingDraftsCount === 0 ? undefined : '#52c41a',
+              fontWeight: 500,
+              fontSize: '13px'
+            }}
           >
-            Post All Reply ({pendingCommentsCount})
+            Post All Reply ({pendingDraftsCount})
           </Button>
         </Space>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content: Column 2 & 3 */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Column 1: Sidebar (managed by parent layout) */}
-
         {/* Column 2: Video List */}
         <div style={{ width: "400px", flexShrink: 0 }}>
           <VideoList groups={groups} selectedVideoId={selectedVideoId} onSelectVideo={setSelectedVideoId} />
@@ -102,23 +103,25 @@ export default function ModerationLayout() {
         </div>
       </div>
 
-      {/* AI Proceed Modal */}
-      <AIProceedModal
-        visible={aiProceedModalVisible}
+      {/* AI Proceed Batch Modal */}
+      <AIProceedBatchModal
+        visible={showAIProceedBatchModal}
         groups={groups}
-        onClose={() => setAiProceedModalVisible(false)}
+        onClose={() => setShowAIProceedBatchModal(false)}
         onComplete={() => {
-          mutate(); // Refresh data after processing
+          setShowAIProceedBatchModal(false);
+          mutate();
         }}
       />
 
       {/* Post All Reply Modal */}
       <PostAllReplyModal
-        visible={postAllReplyModalVisible}
+        visible={showPostAllModal}
         groups={groups}
-        onClose={() => setPostAllReplyModalVisible(false)}
+        onClose={() => setShowPostAllModal(false)}
         onComplete={() => {
-          mutate(); // Refresh data after processing
+          setShowPostAllModal(false);
+          mutate();
         }}
       />
     </div>

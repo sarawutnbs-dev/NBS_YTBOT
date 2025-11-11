@@ -8,12 +8,22 @@ export async function POST() {
     const session = (await getServerAuthSession()) as AppSession | null;
     assert(isAllowedUser, session, "Forbidden");
 
+    console.log("[POST /api/transcripts/ensure-missing] Starting...");
     const result = await ensureMissing();
+    console.log("[POST /api/transcripts/ensure-missing] Success:", result);
 
     return NextResponse.json(result);
   } catch (error) {
     console.error("[POST /api/transcripts/ensure-missing] Error:", error);
     const message = error instanceof Error ? error.message : "Failed to ensure missing transcripts";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const stack = error instanceof Error ? error.stack : undefined;
+
+    return NextResponse.json(
+      {
+        error: message,
+        details: stack
+      },
+      { status: 500 }
+    );
   }
 }

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { IndexStatus } from "@prisma/client";
 import { indexVideo } from "@/jobs/indexVideo";
+import { fetchVideoMeta } from "@/lib/transcript";
 
 /**
  * Ensure video index for given video IDs
@@ -14,7 +15,7 @@ export async function ensureVideoIndexFor(videoIds: Set<string>) {
   for (const videoId of ids) {
     try {
       const vi = await prisma.videoIndex.findUnique({ where: { videoId } });
-      
+
       if (vi && (vi.status === IndexStatus.READY || vi.status === IndexStatus.INDEXING)) {
         console.log(`[transcriptQueue] Video ${videoId} already ${vi.status}, skipping`);
         continue;
@@ -22,10 +23,32 @@ export async function ensureVideoIndexFor(videoIds: Set<string>) {
 
       // ถ้าไม่มี หรือเคย FAILED/NONE → เริ่มทำใหม่
       console.log(`[transcriptQueue] Queueing video ${videoId} for indexing`);
+
+      // Fetch video metadata to get title and publishedAt
+      let videoTitle = vi?.title || "";
+      let publishedAt = vi?.publishedAt || null;
+
+      try {
+        const meta = await fetchVideoMeta(videoId);
+        videoTitle = meta?.title || videoTitle;
+        publishedAt = meta?.publishedAt ? new Date(meta.publishedAt) : publishedAt;
+      } catch (metaError) {
+        console.warn(`[transcriptQueue] Failed to fetch metadata for ${videoId}:`, metaError);
+      }
+
       await prisma.videoIndex.upsert({
         where: { videoId },
-        update: { status: IndexStatus.INDEXING },
-        create: { videoId, title: "", status: IndexStatus.INDEXING }
+        update: {
+          status: IndexStatus.INDEXING,
+          title: videoTitle,
+          publishedAt: publishedAt
+        },
+        create: {
+          videoId,
+          title: videoTitle,
+          publishedAt: publishedAt,
+          status: IndexStatus.INDEXING
+        }
       });
 
       // TODO: เปลี่ยนเป็นคิวจริง (BullMQ/Upstash) ถ้ามี

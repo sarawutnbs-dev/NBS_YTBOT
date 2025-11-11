@@ -3,6 +3,7 @@ import { smartHybridSearch } from "./retriever-v2";
 import { chatCompletion, getChatModelInfo } from "./openai";
 import { estimateContextCost, truncateContexts, countTokens } from "./tokenizer";
 import { AnswerRequest, AnswerResponse } from "./schema";
+import { generateCommentReply, ProductRecommendation } from "./comment-reply";
 
 /**
  * Default system prompt for RAG
@@ -137,6 +138,7 @@ export async function generateAnswer(
 
 /**
  * Generate answers for multiple comments in batch (grouped by video)
+ * Now uses generateCommentReply for consistent JSON format and product recommendations
  */
 export async function generateBatchAnswers(
   videoId: string,
@@ -150,6 +152,7 @@ export async function generateBatchAnswers(
   results: Array<{
     commentId: string;
     answer: string;
+    products: ProductRecommendation[];
     contexts: SearchResult[];
   }>;
   totalTokensUsed: number;
@@ -157,58 +160,46 @@ export async function generateBatchAnswers(
   const {
     includeProducts = true,
     includeTranscripts = true,
-    temperature = 0.7,
   } = options;
 
   let totalTokens = 0;
   const results: Array<{
     commentId: string;
     answer: string;
+    products: ProductRecommendation[];
     contexts: SearchResult[];
   }> = [];
 
-  // Pre-fetch video transcript context if needed (shared across all comments)
-  let sharedTranscriptContext: SearchResult[] = [];
-  if (includeTranscripts) {
-    try {
-      sharedTranscriptContext = await hybridSearch("", {
-        // Empty query to get general transcript chunks
-        topK: 3,
-        sourceType: "transcript",
-        videoId,
-        minScore: 0,
-      });
-    } catch (error) {
-      console.warn("[answer] Failed to fetch shared transcript context:", error);
-    }
-  }
+  console.log(`[answer] Starting batch generation for ${commentQueries.length} comments in video ${videoId}`);
 
-  // Process each comment
+  // Process each comment using generateCommentReply (consistent with main system)
   for (const { commentId, text } of commentQueries) {
     try {
-      const response = await generateAnswer({
-        query: text,
+      const response = await generateCommentReply({
+        commentText: text,
         videoId,
         includeProducts,
         includeTranscripts,
-        includeComments: false, // Don't include other comments in batch mode
-        temperature,
       });
 
       results.push({
         commentId,
-        answer: response.answer,
+        answer: response.replyText,
+        products: response.products,
         contexts: response.contexts,
       });
 
       totalTokens += response.tokenUsage.totalTokens;
+
+      console.log(`[answer] ✅ Comment ${commentId}: ${response.products.length} products, ${response.tokenUsage.totalTokens} tokens`);
     } catch (error) {
-      console.error(`[answer] Failed to generate answer for comment ${commentId}:`, error);
+      console.error(`[answer] ❌ Failed to generate answer for comment ${commentId}:`, error);
 
       // Add error response
       results.push({
         commentId,
         answer: "ขออภัยครับ เกิดข้อผิดพลาดในการประมวลผลคำถามของคุณ กรุณาลองใหม่อีกครั้งครับ",
+        products: [],
         contexts: [],
       });
     }
