@@ -6,6 +6,8 @@ import { CheckOutlined, CloseOutlined, SendOutlined, EditOutlined, ReloadOutline
 import { format } from "date-fns";
 import type { Draft, Comment } from "@prisma/client";
 import axios from "axios";
+import AIContextModal from "./AIContextModal";
+import RefreshModal from "./RefreshModal";
 
 const { TextArea } = Input;
 
@@ -30,13 +32,21 @@ interface CommentDetailProps {
 }
 
 export default function CommentDetail({ group, onRefresh }: CommentDetailProps) {
-  const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [editedReply, setEditedReply] = useState<string>("");
   const [editedProducts, setEditedProducts] = useState<Array<{ name: string; url: string; price: string }>>([]);
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
   const [hiddenCommentIds, setHiddenCommentIds] = useState<Set<string>>(new Set());
+  const [showAIContextModal, setShowAIContextModal] = useState(false);
+  const [aiContextData, setAIContextData] = useState<any>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [showRefreshModal, setShowRefreshModal] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<"processing" | "success" | "error">("processing");
+  const [refreshMessage, setRefreshMessage] = useState<string | undefined>(undefined);
+  const [refreshContextData, setRefreshContextData] = useState<any>(null);
+  const [refreshingCommentId, setRefreshingCommentId] = useState<string | null>(null);
 
   if (!group) {
     return (
@@ -58,17 +68,50 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
 
   async function handleSendToAI() {
     try {
-      setLoading(true);
+      setContextLoading(true);
+      setShowAIContextModal(true);
+
+      // Fetch preview context
+      const response = await axios.post("/api/drafts/preview-context", { videoId: group!.videoId });
+
+      if (response.data.success) {
+        setAIContextData(response.data.data);
+      } else {
+        message.error(response.data.error || "Failed to load context");
+        setShowAIContextModal(false);
+      }
+    } catch (error: any) {
+      console.error(error);
+      const errorMsg = error.response?.data?.error || "ไม่สามารถโหลดข้อมูลได้";
+      message.error(errorMsg);
+      setShowAIContextModal(false);
+    } finally {
+      setContextLoading(false);
+    }
+  }
+
+  async function handleConfirmSendToAI() {
+    try {
+      setConfirmLoading(true);
+
       const response = await axios.post("/api/drafts/generate-video", { videoId: group!.videoId });
+
       message.success(response.data.message || "สร้างร่างคำตอบสำเร็จ");
+      setShowAIContextModal(false);
+      setAIContextData(null);
       onRefresh();
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.response?.data?.error || "ไม่สามารถสร้างร่างคำตอบได้";
       message.error(errorMsg);
     } finally {
-      setLoading(false);
+      setConfirmLoading(false);
     }
+  }
+
+  function handleCancelAIContext() {
+    setShowAIContextModal(false);
+    setAIContextData(null);
   }
 
   async function handleReject(draftId: string) {
@@ -154,19 +197,45 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
 
   async function handleRefreshComment(commentId: string) {
     try {
-      setActionLoading(commentId);
-      const response = await axios.post("/api/drafts/regenerate-single", {
-        commentId,
-      });
-      message.success(response.data.message || "สร้างคำตอบใหม่สำเร็จ");
+      setRefreshingCommentId(commentId);
+      setShowRefreshModal(true);
+      setRefreshStatus("processing");
+      setRefreshMessage("กำลังโหลดข้อมูล...");
+      setRefreshContextData(null);
+
+      // Fetch preview context first
+      const previewResponse = await axios.post("/api/drafts/preview-single", { commentId });
+      setRefreshContextData(previewResponse.data);
+
+      // Now regenerate the draft
+      setRefreshStatus("processing");
+      setRefreshMessage("กำลังสร้างคำตอบใหม่...");
+
+      const response = await axios.post("/api/drafts/regenerate-single", { commentId });
+
+      setRefreshStatus("success");
+      setRefreshMessage(response.data.message || "สร้างคำตอบใหม่สำเร็จ");
+
+      // Auto close after 2 seconds
+      setTimeout(() => {
+        setShowRefreshModal(false);
+        setRefreshContextData(null);
+        setRefreshingCommentId(null);
+      }, 2000);
+
       onRefresh();
     } catch (error: any) {
       console.error(error);
       const errorMsg = error.response?.data?.error || "ไม่สามารถสร้างคำตอบใหม่ได้";
-      message.error(errorMsg);
-    } finally {
-      setActionLoading(null);
+      setRefreshStatus("error");
+      setRefreshMessage(errorMsg);
     }
+  }
+
+  function handleCloseRefreshModal() {
+    setShowRefreshModal(false);
+    setRefreshContextData(null);
+    setRefreshingCommentId(null);
   }
 
   return (
@@ -189,7 +258,7 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
               type="text"
               icon={<SendOutlined />}
               onClick={handleSendToAI}
-              loading={loading}
+              loading={contextLoading || confirmLoading}
               disabled={!group.hasTranscript || commentsWithoutDrafts.length === 0}
               size="small"
               style={{
@@ -404,7 +473,7 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
                                           icon={<ReloadOutlined />}
                                           type="text"
                                           onClick={() => handleRefreshComment(comment.id)}
-                                          loading={actionLoading === comment.id}
+                                          loading={refreshingCommentId === comment.id}
                                           style={{
                                             color: '#1890ff',
                                             fontSize: '14px',
@@ -544,6 +613,25 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
           Pending: {pendingDrafts.length}
         </Text>
       </div>
+
+      {/* AI Context Preview Modal */}
+      <AIContextModal
+        visible={showAIContextModal}
+        data={aiContextData}
+        loading={contextLoading}
+        onConfirm={handleConfirmSendToAI}
+        onCancel={handleCancelAIContext}
+        confirmLoading={confirmLoading}
+      />
+
+      {/* Refresh Modal */}
+      <RefreshModal
+        visible={showRefreshModal}
+        status={refreshStatus}
+        message={refreshMessage}
+        contextData={refreshContextData}
+        onClose={handleCloseRefreshModal}
+      />
     </div>
   );
 }

@@ -13,6 +13,7 @@ type ProductWithTags = {
   id: string;
   name: string;
   affiliateUrl: string;
+  shortURL: string | null;
   tags: string[];
   price?: number;
   commission?: number;
@@ -96,13 +97,17 @@ export default function ProductsTable() {
       render: (value?: number) => value ? `฿${value.toLocaleString()}` : "-"
     },
     {
-      title: "Affiliate URL",
-      dataIndex: "affiliateUrl",
-      key: "affiliateUrl",
-      render: (value: string) => (
-        <a href={value} target="_blank" rel="noreferrer">
-          Link
-        </a>
+      title: "Short URL",
+      dataIndex: "shortURL",
+      key: "shortURL",
+      render: (value: string | null) => (
+        value ? (
+          <a href={value} target="_blank" rel="noreferrer">
+            {value}
+          </a>
+        ) : (
+          <span style={{ color: "#999" }}>-</span>
+        )
       )
     },
     {

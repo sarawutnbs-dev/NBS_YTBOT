@@ -75,7 +75,7 @@ export async function generateDraftsForComments() {
         },
         select: {
           name: true,
-          affiliateUrl: true,
+          shortURL: true,
           price: true,
           tags: true
         }
@@ -91,7 +91,7 @@ export async function generateDraftsForComments() {
       // 7. ตัดข้อมูลให้พอดี token และส่งให้ AI แบบแบ่ง batch
       const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
         name: p.name,
-        affiliateUrl: p.affiliateUrl,
+        affiliateUrl: p.shortURL,
         price: p.price
       }));
       const trimmedChunks = preview.chunks.slice(0, MAX_TRANSCRIPT_CHUNKS);
@@ -195,7 +195,7 @@ export async function generateDraftsForVideo(videoId: string) {
     },
     select: {
       name: true,
-      affiliateUrl: true,
+      shortURL: true,
       price: true,
       tags: true
     }
@@ -211,7 +211,7 @@ export async function generateDraftsForVideo(videoId: string) {
   // 5. ตัดข้อมูลให้พอดี token
   const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
     name: p.name,
-    affiliateUrl: p.affiliateUrl,
+    affiliateUrl: p.shortURL,
     price: p.price
   }));
   const trimmedChunks = preview.chunks.slice(0, MAX_TRANSCRIPT_CHUNKS);

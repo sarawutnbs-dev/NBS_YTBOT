@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       },
       select: {
         name: true,
-        affiliateUrl: true,
+        shortURL: true,
         price: true,
         tags: true
       }
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
     // 5. ตัดข้อมูลให้พอดี token
     const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
       name: p.name,
-      affiliateUrl: p.affiliateUrl,
+      affiliateUrl: p.shortURL,
       price: p.price,
       tags: p.tags
     }));
