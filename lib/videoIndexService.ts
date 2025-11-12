@@ -11,6 +11,9 @@ export type VideoIndexListItem = {
   status: IndexStatus;
   updatedAt: Date;
   publishedAt: Date | null;
+  tags: string[];
+  categoryTags: string[];
+  brandTags: string[];
 };
 
 export type VideoPreview = {
@@ -63,6 +66,9 @@ export async function listVideoIndex(params: {
         status: true,
         updatedAt: true,
         publishedAt: true,
+        tags: true,
+        categoryTags: true,
+        brandTags: true,
       },
       orderBy: { updatedAt: "desc" },
       skip,

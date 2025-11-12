@@ -67,6 +67,18 @@ model Product {
   @@index([inStock, hasAffiliate])
 }
 
+model BrandTag {
+  id        String   @id @default(cuid())
+  category  String
+  brand     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([category, brand])
+  @@index([category])
+  @@index([brand])
+}
+
 model ShopeeCategory {
   id            String   @id @default(cuid())
   categoryId    Int      @unique

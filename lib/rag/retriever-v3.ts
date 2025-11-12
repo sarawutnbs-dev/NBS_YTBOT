@@ -92,9 +92,66 @@ export async function poolBasedHybridSearch(
     maxPoolProducts?: number;
   } = {}
 ): Promise<SearchResult[]> {
-  // For current schema, directly use two-stage hybrid search with intent-aware filters (in retriever-v2)
-  console.log(`[Pool-V3] Pool disabled; using two-stage retrieval`);
-  return twoStageHybridSearch(query, videoId, options);
+  const {
+    topK = 6,
+    includeTranscripts = true,
+    includeProducts = true,
+    minScore = 0.3,
+    maxPoolProducts = 100,
+  } = options;
+
+  const results: SearchResult[] = [];
+
+  // 1. Search transcripts (direct hybrid search)
+  if (includeTranscripts) {
+    const transcriptResults = await hybridSearch(query, {
+      topK: Math.ceil(topK / 2),
+      sourceType: "transcript",
+      videoId,
+      minScore,
+    });
+    results.push(...transcriptResults);
+    console.log(`[Pool-V3] Found ${transcriptResults.length} transcript results`);
+  }
+
+  // 2. Search products using precomputed pool
+  if (includeProducts) {
+    try {
+      // Get pool product IDs
+      const { getVideoProductPool } = await import('./video-product-pool');
+      const poolProductIds = await getVideoProductPool(videoId, {
+        topK: maxPoolProducts,
+        minScore: 0.1, // Lower threshold for pool filtering
+      });
+
+      if (poolProductIds.length > 0) {
+        console.log(`[Pool-V3] Using pool with ${poolProductIds.length} products`);
+
+        // Vector search on pool
+        const embedding = await createEmbedding(query);
+        const productResults = await vectorSearchOnPool(embedding, poolProductIds, {
+          topK: Math.ceil(topK / 2),
+          minScore,
+        });
+
+        results.push(...productResults);
+      } else {
+        console.log(`[Pool-V3] No pool found, falling back to two-stage`);
+        // Fallback to two-stage if no pool
+        return twoStageHybridSearch(query, videoId, options);
+      }
+    } catch (error) {
+      console.error(`[Pool-V3] Pool search failed, falling back to two-stage:`, error);
+      return twoStageHybridSearch(query, videoId, options);
+    }
+  }
+
+  // Sort by score and return top K
+  const sorted = results.sort((a, b) => b.score - a.score).slice(0, topK);
+
+  console.log(`[Pool-V3] Total results: ${sorted.length}`);
+
+  return sorted;
 }
 
 /**
@@ -110,6 +167,6 @@ export async function smartSearchV3(
     minScore?: number;
   } = {}
 ): Promise<SearchResult[]> {
-  // Use two-stage with intent-aware filtering (pass minScore through)
-  return twoStageHybridSearch(query, videoId, options);
+  // Try pool-based search first, falls back to two-stage automatically if pool doesn't exist
+  return poolBasedHybridSearch(query, videoId, options);
 }

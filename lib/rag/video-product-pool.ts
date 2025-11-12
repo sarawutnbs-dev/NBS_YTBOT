@@ -44,12 +44,13 @@ function computeRelevanceScore(
   let matchedCategory = false;
   let matchedPriceRange = false;
 
-  // Brand matching (40% weight)
-  if (product.brand && video.brandTags.length > 0) {
-    if (video.brandTags.some(b => b.toLowerCase() === product.brand?.toLowerCase())) {
-      score += 0.4;
-      matchedBrand = true;
-    }
+  // Tag matching (40% weight)
+  if (video.tags.length > 0 && product.tags.length > 0) {
+    const matchedTags = product.tags.filter(pt =>
+      video.tags.some(vt => vt.toLowerCase() === pt.toLowerCase())
+    );
+    const tagScore = (matchedTags.length / video.tags.length) * 0.4;
+    score += tagScore;
   }
 
   // Category matching (30% weight)
@@ -72,13 +73,12 @@ function computeRelevanceScore(
     }
   }
 
-  // Tag matching (10% weight)
-  if (video.tags.length > 0 && product.tags.length > 0) {
-    const matchedTags = product.tags.filter(pt =>
-      video.tags.some(vt => vt.toLowerCase() === pt.toLowerCase())
-    );
-    const tagScore = (matchedTags.length / video.tags.length) * 0.1;
-    score += tagScore;
+  // Brand matching (10% weight)
+  if (product.brand && video.brandTags.length > 0) {
+    if (video.brandTags.some(b => b.toLowerCase() === product.brand?.toLowerCase())) {
+      score += 0.1;
+      matchedBrand = true;
+    }
   }
 
   return { score, matchedBrand, matchedCategory, matchedPriceRange };

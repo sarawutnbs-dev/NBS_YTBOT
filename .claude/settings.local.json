@@ -36,7 +36,9 @@
       "Bash(npm install:*)",
       "Bash(npx playwright:*)",
       "Bash(node -r dotenv/config -r esbuild-register scripts/test-chatCompletion.ts:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(node -r dotenv/config -e:*)",
+      "Bash(npx prisma db execute:*)"
     ],
     "deny": [],
     "ask": []

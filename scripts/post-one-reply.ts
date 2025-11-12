@@ -83,6 +83,11 @@ async function main() {
     text: draft.reply as string
   });
 
+  // Only update status to POSTED if the YouTube API response is successful
+  if (!result || !result.id) {
+    throw new Error('YouTube API did not return a valid response - reply may not have been posted');
+  }
+
   console.log('✅ Reply posted successfully!');
   console.log(`   YouTube Reply ID: ${result.id}`);
   console.log(`   Published at: ${result.snippet?.publishedAt}`);

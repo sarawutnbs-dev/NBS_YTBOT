@@ -106,11 +106,16 @@ export default function PostAllReplyModal({ visible, groups, onClose, onComplete
       setCommentStatuses(new Map(newStatuses));
 
       try {
-        // First, update draft status to POSTED
-        await axios.patch(`/api/drafts/${comment.draft.id}`, { status: "POSTED" });
+        // First, post the reply to YouTube
+        const response = await axios.post(`/api/comments/${commentId}/reply`);
 
-        // Then, post the reply to YouTube
-        await axios.post(`/api/comments/${commentId}/reply`);
+        // Only update status to POSTED if YouTube API returned success
+        if (!response.data?.youtubeReplyId) {
+          throw new Error("YouTube API did not return a valid reply ID");
+        }
+
+        // Then, update draft status to POSTED
+        await axios.patch(`/api/drafts/${comment.draft.id}`, { status: "POSTED" });
 
         // Update status to success
         newStatuses.set(commentId, {

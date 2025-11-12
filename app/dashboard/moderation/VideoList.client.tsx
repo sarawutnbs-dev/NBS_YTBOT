@@ -60,6 +60,13 @@ export default function VideoList({ groups, selectedVideoId, onSelectVideo }: Vi
       });
     }
 
+    // Hide videos with both noDraft = 0 and pending = 0
+    filtered = filtered.filter((group) => {
+      const noDraft = group.comments.filter((c) => !c.draft).length;
+      const pending = group.comments.filter((c) => c.draft?.status === "PENDING").length;
+      return noDraft > 0 || pending > 0;
+    });
+
     // Sort
     filtered.sort((a, b) => {
       switch (sortBy) {

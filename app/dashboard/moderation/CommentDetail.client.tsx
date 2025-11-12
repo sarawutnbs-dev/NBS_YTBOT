@@ -134,11 +134,16 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
     try {
       setActionLoading(draftId);
 
-      // Update draft status to POSTED
-      await axios.patch(`/api/drafts/${draftId}`, { status: "POSTED" });
+      // First, post the reply to YouTube
+      const response = await axios.post(`/api/comments/${commentId}/reply`);
 
-      // Post the reply to YouTube
-      await axios.post(`/api/comments/${commentId}/reply`);
+      // Only update status to POSTED if YouTube API returned success
+      if (!response.data?.youtubeReplyId) {
+        throw new Error("YouTube API did not return a valid reply ID");
+      }
+
+      // Then, update draft status to POSTED
+      await axios.patch(`/api/drafts/${draftId}`, { status: "POSTED" });
 
       message.success("โพสต์ไปยัง YouTube สำเร็จ!");
       onRefresh();

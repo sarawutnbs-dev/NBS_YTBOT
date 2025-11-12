@@ -75,7 +75,7 @@ export async function generateCommentReply(
     topK: 6,
     includeTranscripts,
     includeProducts,
-    minScore: 0.2  // Lower threshold to find more contexts (was 0.3)
+    minScore: 0.6  // High threshold for maximum relevance
   });
 
   console.log(`[CommentReply] Retrieved ${contexts.length} contexts`);
@@ -249,7 +249,7 @@ ${contextText}${productsText}${guidanceText}`;
         }
         // If no allowed URLs at all, remove every URL
         return "";
-      }).replace(/\s{2,}/g, " ").trim();
+      }).replace(/ {2,}/g, " ").trim(); // Only replace multiple spaces, keep newlines
     } catch (_) {
       // Non-fatal: keep original replyText if sanitization fails
     }

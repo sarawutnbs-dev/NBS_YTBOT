@@ -103,10 +103,10 @@ async function chatCompletionViaResponses(
     model,
     input,
     reasoning: {
-      effort: "low",
+      effort: "medium",  // Increased from "low" for better quality reasoning
     },
     text: {
-      verbosity: options?.jsonMode ? "low" : "medium",
+      verbosity: "medium",  // Always use "medium" for consistent quality
     },
   };
 
