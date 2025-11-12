@@ -245,15 +245,22 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
       {/* Header */}
       <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0", background: "#fafafa" }}>
         <Space direction="vertical" style={{ width: "100%" }} size={8}>
-          <Title level={5} style={{ margin: 0 }}>
-            <Link
-              href={`https://www.youtube.com/watch?v=${group.videoId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {group.videoTitle}
-            </Link>
-          </Title>
+          <div>
+            <Title level={5} style={{ margin: 0, marginBottom: 4 }}>
+              <Link
+                href={`https://www.youtube.com/watch?v=${group.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {group.videoTitle}
+              </Link>
+            </Title>
+            {group.videoPublishedAt && (
+              <Text style={{ fontSize: "12px", color: "#999" }}>
+                {format(new Date(group.videoPublishedAt), "dd/MM/yy")}
+              </Text>
+            )}
+          </div>
 
           <Space>
             <Button
