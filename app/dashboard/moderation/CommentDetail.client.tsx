@@ -56,8 +56,10 @@ export default function CommentDetail({ group, onRefresh }: CommentDetailProps) 
     );
   }
 
-  // Filter out rejected comments for display
-  const visibleComments = group.comments.filter((c) => c.draft?.status !== "REJECTED");
+  // Filter out rejected and posted comments for display
+  const visibleComments = group.comments.filter((c) =>
+    c.draft?.status !== "REJECTED" && c.draft?.status !== "POSTED"
+  );
 
   // Count comments without drafts (excluding hidden)
   const commentsWithoutDrafts = group.comments.filter((c) =>
