@@ -70,11 +70,11 @@ export async function POST(
     console.error("Full error:", JSON.stringify(error, null, 2));
 
     // Check if it's a missing credentials error
-    if (error?.message?.includes("Missing YouTube OAuth credentials")) {
+    if (error?.message?.includes("Missing YOUTUBE_OAUTH_REFRESH_TOKEN")) {
       return NextResponse.json({
-        error: "YouTube authentication required. Please logout and login again to grant YouTube permissions.",
-        needsReauth: true
-      }, { status: 401 });
+        error: "YouTube OAuth token not configured. Please set YOUTUBE_OAUTH_REFRESH_TOKEN in environment variables.",
+        needsConfig: true
+      }, { status: 500 });
     }
 
     const message =

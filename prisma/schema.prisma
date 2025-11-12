@@ -29,6 +29,8 @@ enum IndexStatus {
 model User {
   id             String        @id @default(cuid())
   email          String        @unique
+  username       String?       @unique  // For username/password login
+  password       String?                // Hashed password
   role           UserRole      @default(USER)
   allowed        Boolean       @default(true)
   createdAt      DateTime      @default(now())
@@ -169,6 +171,8 @@ model VideoIndex {
   tags         String[]    @default([])
   chunksJSON   String?
   summaryJSON  String?
+  summaryText  String?                   // GPT-5 generated summary (400-600 words)
+  summaryCategory String?                // Category: Notebook | PC Component | Smartphone | Tablet | Unknown
   source       String?
   errorMessage String?
   publishedAt  DateTime?

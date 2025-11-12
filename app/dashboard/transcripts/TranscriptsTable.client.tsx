@@ -103,7 +103,7 @@ export default function TranscriptsTable() {
     setLoadingRunAll(true);
     try {
       const response = await axios.post("/api/transcripts/ensure-missing");
-      const { count, metadataUpdated } = response.data;
+      const { count, metadataUpdated, summarized } = response.data;
 
       const messages = [];
       if (count > 0) {
@@ -111,6 +111,9 @@ export default function TranscriptsTable() {
       }
       if (metadataUpdated > 0) {
         messages.push(`Updated metadata for ${metadataUpdated} video(s)`);
+      }
+      if (summarized > 0) {
+        messages.push(`Generated GPT-5 summary for ${summarized} video(s)`);
       }
 
       if (messages.length > 0) {
@@ -121,7 +124,7 @@ export default function TranscriptsTable() {
 
       mutate();
     } catch (error) {
-      message.error("Failed to queue missing videos");
+      message.error("Failed to process missing videos");
       console.error(error);
     } finally {
       setLoadingRunAll(false);

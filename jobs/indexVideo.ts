@@ -4,6 +4,7 @@ import { fetchVideoMeta, getCaptions, chunkTranscript, buildIndex } from "@/lib/
 import { scrapeTranscriptFromTubeTranscript } from "@/lib/transcriptScraper";
 import { extractVideoTags } from "@/lib/tagUtils";
 import { ingestTranscript } from "@/lib/rag/ingest";
+import { summarizeTranscriptWithGPT5 } from "@/lib/rag/transcript-summarizer";
 import type { TranscriptSource } from "@/lib/rag/schema";
 
 export async function indexVideo({ videoId }: { videoId: string }) {
@@ -85,6 +86,15 @@ export async function indexVideo({ videoId }: { videoId: string }) {
       }
     }
 
+    // NEW FLOW: Summarize transcript with GPT-5 BEFORE chunking
+    console.log(`[indexVideo] 🤖 Summarizing transcript with GPT-5...`);
+    const gpt5Summary = await summarizeTranscriptWithGPT5(
+      text,
+      meta?.title || current?.title || "Untitled Video"
+    );
+    console.log(`[indexVideo] ✅ GPT-5 summary: ${gpt5Summary.category} - ${gpt5Summary.summary_text.substring(0, 100)}...`);
+
+    // Still create chunks for backward compatibility and full transcript storage
     console.log(`[indexVideo] Chunking transcript for ${videoId} (source: ${source})`);
     const chunks = chunkTranscript(text);
 
@@ -94,14 +104,14 @@ export async function indexVideo({ videoId }: { videoId: string }) {
     // CRITICAL: Ingest to RAG BEFORE updating status to READY
     // This ensures RAG is populated before marking video as ready
     try {
-      console.log(`[indexVideo] 🤖 Auto-ingesting transcript to RAG...`);
+      console.log(`[indexVideo] 🤖 Auto-ingesting GPT-5 summary to RAG...`);
 
       const transcriptSource: TranscriptSource = {
         videoId,
-        title: meta?.title || current?.title || "Untitled Video",
+        title: meta?.title || gpt5Summary.video_title || current?.title || "Untitled Video",
         channelName: meta?.channelTitle || "Unknown Channel",
         publishedAt: meta?.publishedAt || current?.publishedAt?.toISOString(),
-        transcript: text,
+        transcript: gpt5Summary.summary_text, // NEW: Use GPT-5 summary instead of full transcript
         duration: undefined, // Will be fetched by RAG if needed
         viewCount: undefined
       };
@@ -111,9 +121,9 @@ export async function indexVideo({ videoId }: { videoId: string }) {
       const ingestResult = await ingestTranscript(transcriptSource, false);
 
       if (ingestResult.chunksCreated === 0) {
-        console.log(`[indexVideo] ⏭️  Transcript already in RAG with same content, skipped re-embedding`);
+        console.log(`[indexVideo] ⏭️  Summary already in RAG with same content, skipped re-embedding`);
       } else {
-        console.log(`[indexVideo] ✅ Auto-ingested to RAG: ${ingestResult.chunksCreated} chunks created`);
+        console.log(`[indexVideo] ✅ Auto-ingested GPT-5 summary to RAG: ${ingestResult.chunksCreated} chunks created`);
       }
     } catch (ingestError) {
       // Don't fail the entire indexing job if RAG ingest fails
@@ -127,8 +137,10 @@ export async function indexVideo({ videoId }: { videoId: string }) {
       data: {
         status: IndexStatus.READY,
         source,
-        chunksJSON: JSON.stringify(chunks),
-        summaryJSON: JSON.stringify(summaryJSON)
+        chunksJSON: JSON.stringify(chunks),         // Full transcript chunks for backward compatibility
+        summaryJSON: JSON.stringify(summaryJSON),   // Backward compatibility
+        summaryText: gpt5Summary.summary_text,      // NEW: GPT-5 generated summary
+        summaryCategory: gpt5Summary.category       // NEW: Detected category
       }
     });
 

@@ -2,19 +2,10 @@ import dotenv from "dotenv";
 dotenv.config(); // Load from .env
 
 import { google } from "googleapis";
-import readline from "readline";
 
 /**
- * Script to generate YouTube OAuth Refresh Token
- *
- * This script will:
- * 1. Generate an authorization URL
- * 2. Ask you to visit the URL and authorize the app
- * 3. Exchange the authorization code for a refresh token
- * 4. Display the refresh token for you to add to .env.local
- *
- * Usage:
- *   npx tsx scripts/generate-youtube-oauth-token.ts
+ * Exchange authorization code for refresh token
+ * Usage: npx tsx scripts/exchange-auth-code.ts YOUR_AUTH_CODE
  */
 
 const SCOPES = [
@@ -22,9 +13,17 @@ const SCOPES = [
   "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 
-async function generateRefreshToken() {
+async function exchangeAuthCode() {
+  const authCode = process.argv[2];
+
+  if (!authCode) {
+    console.error("❌ Error: Please provide authorization code as argument");
+    console.error("Usage: npx tsx scripts/exchange-auth-code.ts YOUR_AUTH_CODE");
+    process.exit(1);
+  }
+
   console.log("\n========================================");
-  console.log("YouTube OAuth Refresh Token Generator");
+  console.log("Exchange Authorization Code");
   console.log("========================================\n");
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -35,73 +34,32 @@ async function generateRefreshToken() {
     process.exit(1);
   }
 
-  console.log("✅ Found OAuth credentials:");
-  console.log(`   Client ID: ${clientId.substring(0, 30)}...`);
-  console.log(`   Client Secret: ${clientSecret.substring(0, 20)}...`);
-  console.log();
+  console.log("✅ Found OAuth credentials");
+  console.log(`📝 Authorization Code: ${authCode.substring(0, 30)}...\n`);
 
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "http://localhost:3000/api/auth/callback/google" // Redirect URI
+    "http://localhost:3000/api/auth/callback/google"
   );
 
-  // Generate authorization URL
-  const authUrl = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    scope: SCOPES,
-    prompt: "consent", // Force consent screen to get refresh token
-  });
-
-  console.log("🔗 Step 1: Authorize the application");
-  console.log("   Please visit this URL to authorize:");
-  console.log();
-  console.log(`   ${authUrl}`);
-  console.log();
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  const code = await new Promise<string>((resolve) => {
-    rl.question("📝 Step 2: Enter the authorization code from the URL: ", (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-
-  if (!code) {
-    console.error("\n❌ No authorization code provided");
-    process.exit(1);
-  }
-
-  console.log("\n⏳ Step 3: Exchanging authorization code for tokens...");
+  console.log("⏳ Exchanging authorization code for tokens...\n");
 
   try {
-    const { tokens } = await oauth2Client.getToken(code);
+    const { tokens } = await oauth2Client.getToken(authCode);
 
     if (!tokens.refresh_token) {
-      console.error("\n❌ Error: No refresh token received!");
+      console.error("❌ Error: No refresh token received!");
       console.error("   This might happen if you've authorized this app before.");
       console.error("   Try revoking access at: https://myaccount.google.com/permissions");
-      console.error("   Then run this script again.");
+      console.error("   Then run the generate script again.");
       process.exit(1);
     }
 
-    console.log("\n✅ Success! Tokens received:");
+    console.log("✅ Success! Tokens received:");
     console.log(`   Access Token: ${tokens.access_token?.substring(0, 30)}...`);
     console.log(`   Refresh Token: ${tokens.refresh_token?.substring(0, 30)}...`);
     console.log(`   Expires In: ${tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : "N/A"}`);
-    console.log();
-
-    console.log("========================================");
-    console.log("🎉 Add this to your .env.local file:");
-    console.log("========================================");
-    console.log();
-    console.log(`YOUTUBE_OAUTH_REFRESH_TOKEN="${tokens.refresh_token}"`);
-    console.log();
-    console.log("========================================");
     console.log();
 
     // Test the refresh token
@@ -127,6 +85,14 @@ async function generateRefreshToken() {
     }
 
     console.log();
+    console.log("========================================");
+    console.log("🎉 Add this to your .env.local file:");
+    console.log("========================================");
+    console.log();
+    console.log(`YOUTUBE_OAUTH_REFRESH_TOKEN="${tokens.refresh_token}"`);
+    console.log();
+    console.log("========================================");
+    console.log();
     console.log("✅ Done! Update your .env.local file with the refresh token above.");
     console.log();
   } catch (error) {
@@ -140,7 +106,7 @@ async function generateRefreshToken() {
   }
 }
 
-generateRefreshToken().catch((error) => {
+exchangeAuthCode().catch((error) => {
   console.error("Fatal error:", error);
   process.exit(1);
 });

@@ -1,15 +1,22 @@
 import OpenAI from "openai";
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.AI_API_KEY;
+// Dynamic API key getter to avoid caching issues
+function getApiKey(): string {
+  const key = process.env.OPENAI_API_KEY || process.env.AI_API_KEY;
+  if (!key) {
+    throw new Error("OPENAI_API_KEY or AI_API_KEY environment variable is required");
+  }
+  return key;
+}
+
 const EMBED_MODEL = process.env.EMBED_MODEL || "text-embedding-3-small";
 const CHAT_MODEL = process.env.CHAT_MODEL || process.env.AI_MODEL || "gpt-5";
 
-if (!OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY or AI_API_KEY environment variable is required");
-}
-
+// Create OpenAI client with dynamic API key
 export const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
+  apiKey: getApiKey(),
+  // Force re-read API key on each request (not cached in OpenAI client)
+  dangerouslyAllowBrowser: false,
 });
 
 /**
@@ -123,21 +130,36 @@ async function chatCompletionViaResponses(
   }
 
   try {
+    console.log(`[openai:gpt-5] Calling Responses API with ${input.length} messages`);
+    console.log(`[openai:gpt-5] Total input length: ${JSON.stringify(input).length} chars`);
+
     const response = await (openai as any).responses.create(requestParams);
 
+    console.log(`[openai:gpt-5] Response received:`, {
+      hasOutputText: !!response?.output_text,
+      outputTextLength: response?.output_text?.length,
+      hasOutput: !!response?.output,
+      outputLength: response?.output?.length
+    });
+
     if (typeof response?.output_text === "string" && response.output_text.trim().length > 0) {
+      console.log(`[openai:gpt-5] Using output_text: ${response.output_text.length} chars`);
       return response.output_text.trim();
     }
 
     const messageOutput = response?.output?.find((item: any) => item.type === "message");
     const textContent = messageOutput?.content?.find((c: any) => c.type === "output_text");
     if (textContent?.text) {
+      console.log(`[openai:gpt-5] Using content.output_text: ${textContent.text.length} chars`);
       return String(textContent.text);
     }
 
+    console.error("[openai:gpt-5] No valid output found in response");
+    console.error("[openai:gpt-5] Response structure:", JSON.stringify(response, null, 2));
     return "";
   } catch (error: any) {
     console.error("[openai:gpt-5] Responses API error:", error);
+    console.error("[openai:gpt-5] Request params:", JSON.stringify(requestParams, null, 2));
     throw new Error(`Failed to generate GPT-5 completion: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
 }
@@ -153,7 +175,7 @@ export async function chatCompletion(
 ): Promise<string> {
   const model = options?.model || CHAT_MODEL;
 
-  // GPT-5 uses Responses API instead of Chat Completions API
+  // GPT-5 uses Responses API (required)
   if (model.startsWith("gpt-5")) {
     return chatCompletionViaResponses(messages, {
       model,

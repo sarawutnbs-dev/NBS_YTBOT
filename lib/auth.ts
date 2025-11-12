@@ -1,10 +1,11 @@
 import { prisma } from "./db";
 import GoogleProvider from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { getServerSession, type DefaultSession, type NextAuthOptions } from "next-auth";
 import { cache } from "react";
 import type { User, Account, Profile } from "next-auth";
 import type { JWT } from "next-auth/jwt";
-import { upsertOAuthToken } from "./youtubeWrite";
+import bcrypt from "bcryptjs";
 
 const env = (
   (globalThis as typeof globalThis & {
@@ -35,6 +36,59 @@ export const authOptions: NextAuthOptions = {
           prompt: "consent",
           scope: "openid email profile https://www.googleapis.com/auth/youtube.force-ssl"
         }
+      }
+    }),
+    CredentialsProvider({
+      id: "credentials",
+      name: "Credentials",
+      credentials: {
+        username: { label: "Username", type: "text" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.username || !credentials?.password) {
+          return null;
+        }
+
+        console.log('\n🔐 Credentials login attempt:', credentials.username);
+
+        // Find user by username
+        const user = await prisma.user.findUnique({
+          where: { username: credentials.username }
+        });
+
+        if (!user) {
+          console.log('❌ User not found');
+          return null;
+        }
+
+        if (!user.allowed) {
+          console.log('❌ User not allowed');
+          return null;
+        }
+
+        if (!user.password) {
+          console.log('❌ User has no password set');
+          return null;
+        }
+
+        // Verify password
+        const isValid = await bcrypt.compare(credentials.password, user.password);
+
+        if (!isValid) {
+          console.log('❌ Invalid password');
+          return null;
+        }
+
+        console.log('✅ Credentials login successful\n');
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.username,
+          role: user.role,
+          allowed: user.allowed
+        } as any;
       }
     })
   ],
@@ -88,37 +142,34 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user, account }: { token: JWT; user?: User; account?: Account | null }) {
       if (user) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email ?? "" }
-        });
+        // For credentials login, user object already has id and role
+        if ((user as any).role) {
+          token.id = user.id;
+          token.role = (user as any).role;
+          token.allowed = (user as any).allowed;
+        } else {
+          // For OAuth login, fetch from database
+          const dbUser = await prisma.user.findUnique({
+            where: { email: user.email ?? "" }
+          });
 
-        if (dbUser) {
-          token.id = dbUser.id;
-          token.role = dbUser.role;
-          token.allowed = dbUser.allowed;
+          if (dbUser) {
+            token.id = dbUser.id;
+            token.role = dbUser.role;
+            token.allowed = dbUser.allowed;
+          }
         }
       }
 
-      // Store OAuth tokens in JWT
+      // Store OAuth tokens in JWT only (not in database)
+      // Database token storage disabled - using .env YOUTUBE_OAUTH_REFRESH_TOKEN instead
       if (account) {
         token.accessToken = account.access_token;
         // Only set refreshToken if Google provided it; otherwise keep existing
         if (typeof account.refresh_token !== 'undefined') {
           token.refreshToken = account.refresh_token as any;
         }
-
-        // Also store tokens in database for YouTube API with automatic refresh
-        if (token.id && account.access_token) {
-          console.log("[Auth] 💾 Storing OAuth tokens in database");
-          await upsertOAuthToken(token.id as string, {
-            accessToken: account.access_token,
-            // Only overwrite refresh token if provided; keep previous otherwise
-            refreshToken: typeof account.refresh_token !== 'undefined' ? (account.refresh_token ?? null) : undefined,
-            expiryDate: account.expires_at ? new Date(account.expires_at * 1000) : null,
-            scope: account.scope ?? null
-          });
-          console.log("[Auth] ✅ Tokens stored successfully");
-        }
+        console.log("[Auth] ✅ OAuth tokens stored in JWT session");
       }
 
       return token;

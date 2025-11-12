@@ -19,6 +19,8 @@ type PreviewData = {
   title: string;
   status: string;
   source?: string; // "captions" | "github"
+  summaryText?: string | null; // NEW: GPT-5 generated summary
+  summaryCategory?: string | null; // NEW: GPT-5 detected category
   summary: {
     totalChunks: number;
     keywords: string[];
@@ -55,6 +57,12 @@ export default function PreviewModal({ open, onClose, videoId }: PreviewModalPro
     const text = data.chunks.map((chunk: { ts: string; text: string }) => `[${chunk.ts}]\n${chunk.text}`).join("\n\n");
     navigator.clipboard.writeText(text);
     message.success("Copied transcript to clipboard!");
+  };
+
+  const handleCopySummary = () => {
+    if (!data?.summaryText) return;
+    navigator.clipboard.writeText(data.summaryText);
+    message.success("Copied AI summary to clipboard!");
   };
 
   const handleCopyGitHub = () => {
@@ -123,6 +131,47 @@ export default function PreviewModal({ open, onClose, videoId }: PreviewModalPro
                 View GitHub Raw File
               </Button>
             </div>
+          )}
+
+          {/* GPT-5 AI Summary (NEW) */}
+          {data.summaryText && (
+            <Card
+              title={
+                <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                  <Space>
+                    <span>🤖 AI Summary</span>
+                    {data.summaryCategory && (
+                      <Tag color="purple">{data.summaryCategory}</Tag>
+                    )}
+                  </Space>
+                  <Button
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={handleCopySummary}
+                  >
+                    Copy
+                  </Button>
+                </Space>
+              }
+              size="small"
+              style={{ marginBottom: 16, backgroundColor: "#f6ffed" }}
+            >
+              <div>
+                <Paragraph
+                  style={{
+                    marginBottom: 8,
+                    whiteSpace: "pre-wrap",
+                    fontSize: "14px",
+                    lineHeight: "1.8"
+                  }}
+                >
+                  {data.summaryText}
+                </Paragraph>
+                <Text type="secondary" style={{ fontSize: "12px" }}>
+                  {data.summaryText.length} chars • {data.summaryText.split(/\s+/).length} words
+                </Text>
+              </div>
+            </Card>
           )}
 
           {/* Summary */}

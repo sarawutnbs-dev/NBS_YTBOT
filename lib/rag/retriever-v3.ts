@@ -34,6 +34,27 @@ async function vectorSearchOnPool(
 
   console.log(`[Pool-V3] Vector search on pool (${poolProductIds.length} products)...`);
 
+  // Convert internal Product IDs to shopeeProductIds for RAG lookup
+  const products = await prisma.product.findMany({
+    where: {
+      id: { in: poolProductIds }
+    },
+    select: {
+      shopeeProductId: true
+    }
+  });
+
+  const shopeeProductIds = products
+    .map(p => p.shopeeProductId)
+    .filter((id): id is string => id !== null);
+
+  if (shopeeProductIds.length === 0) {
+    console.log(`[Pool-V3] No shopeeProductIds found for pool products`);
+    return [];
+  }
+
+  console.log(`[Pool-V3] Mapped ${poolProductIds.length} internal IDs → ${shopeeProductIds.length} Shopee IDs`);
+
   const query = `
     SELECT
       c.id,
@@ -56,7 +77,7 @@ async function vectorSearchOnPool(
   const results = await prisma.$queryRawUnsafe<any[]>(
     query,
     JSON.stringify(queryEmbedding),
-    poolProductIds,
+    shopeeProductIds,
     topK
   );
 

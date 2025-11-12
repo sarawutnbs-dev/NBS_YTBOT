@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
+dotenv.config(); // Load from .env
 
 import { google } from "googleapis";
 

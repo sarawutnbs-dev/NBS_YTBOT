@@ -70,86 +70,107 @@ export async function generateCommentReply(
   // Detect intent from the comment to steer retrieval and guidance
   const intent = detectQueryIntent(commentText);
 
-  // 1. Retrieve contexts using smart search V3 (with pool if available)
-  const contexts = await smartSearchV3(commentText, videoId, {
-    topK: 6,
-    includeTranscripts,
-    includeProducts,
-    minScore: 0.6  // High threshold for maximum relevance
-  });
+  console.log(`[CommentReply] New approach: AI Summary + VideoProductPool`);
 
-  console.log(`[CommentReply] Retrieved ${contexts.length} contexts`);
+  // 1. Get AI-generated summary from VideoIndex (GPT-5 summary, 400-600 words)
+  let fullTranscript = "";
+  if (includeTranscripts) {
+    const videoIndex = await prisma.videoIndex.findUnique({
+      where: { videoId },
+      select: {
+        summaryText: true,
+        summaryCategory: true,
+        title: true,
+      },
+    });
 
-  // Log top scores for debugging
-  if (contexts.length > 0) {
-    const topScores = contexts.slice(0, 3).map(c => c.score.toFixed(3)).join(', ');
-    console.log(`[CommentReply] Top scores: ${topScores}`);
+    if (videoIndex?.summaryText) {
+      fullTranscript = videoIndex.summaryText;
+
+      const transcriptLength = fullTranscript.length;
+      const estimatedTokens = Math.ceil(transcriptLength / 4); // Rough estimate: 1 token ≈ 4 chars
+
+      console.log(`[CommentReply] Got AI summary: ${transcriptLength} chars (~${estimatedTokens} tokens)`);
+      console.log(`[CommentReply] Category: ${videoIndex.summaryCategory || 'Unknown'}`);
+
+      // AI summaries are already concise (400-600 words), but let's have a safety check
+      const MAX_SUMMARY_TOKENS = 2000; // ~8000 chars
+      const MAX_SUMMARY_CHARS = MAX_SUMMARY_TOKENS * 4;
+
+      if (transcriptLength > MAX_SUMMARY_CHARS) {
+        console.warn(`[CommentReply] Summary unexpectedly long (${transcriptLength} chars), truncating to ${MAX_SUMMARY_CHARS}`);
+        fullTranscript = fullTranscript.substring(0, MAX_SUMMARY_CHARS) + "\n\n... (summary truncated)";
+      }
+    } else {
+      console.warn(`[CommentReply] No AI summary found for video ${videoId}`);
+    }
   }
 
-  if (contexts.length === 0) {
-    // No context found - use general knowledge instead of refusing
-    console.warn(`[CommentReply] No contexts found for: "${commentText.substring(0, 50)}..."`);
-    console.warn(`[CommentReply] Video: ${videoId}, includeTranscripts: ${includeTranscripts}, includeProducts: ${includeProducts}`);
+  // 2. Get Top 20 products from VideoProductPool
+  const suggestedProducts: Array<{
+    name: string;
+    price: number | null;
+    shortURL: string | null;
+  }> = [];
 
-    // Still try to answer using general knowledge (GPT-5 can handle it)
-    console.log(`[CommentReply] Attempting answer with general knowledge (no RAG context)`);
-  }
+  if (includeProducts) {
+    const poolEntries = await prisma.videoProductPool.findMany({
+      where: { videoId },
+      orderBy: { relevanceScore: 'desc' },
+      take: 20,
+    });
 
-  // 2. Build suggested products pool (if any)
-  const productContexts = contexts.filter(c => c.sourceType === "product");
-  const suggestedProducts: Array<{ id: string; name: string; url: string; price: string }> = [];
+    console.log(`[CommentReply] Found ${poolEntries.length} products in pool`);
 
-  if (productContexts.length > 0) {
-    // Get product details from database
-    const productIds = [...new Set(productContexts.map(c => c.sourceId))];
-
+    // Get product details
+    const productIds = poolEntries.map(p => p.productId);
     const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
+      where: {
+        id: { in: productIds },
+      },
       select: {
         id: true,
         name: true,
-        shortURL: true,
         price: true,
-        commission: true
-      }
+        shortURL: true,
+      },
     });
 
-    products.forEach(p => {
-      // Only allow shortURL as the canonical link for recommendations
-      if (p.shortURL) {
+    // Map to keep order from pool
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    for (const entry of poolEntries) {
+      const product = productMap.get(entry.productId);
+      if (product && product.shortURL) {
         suggestedProducts.push({
-          id: p.id,
-          name: p.name,
-          url: p.shortURL,
-          price: p.price?.toString() || ""
+          name: product.name,
+          price: product.price,
+          shortURL: product.shortURL,
         });
       }
-    });
+    }
 
-    console.log(`[CommentReply] Suggested products: ${suggestedProducts.length}`);
+    console.log(`[CommentReply] Prepared ${suggestedProducts.length} suggested products`);
   }
 
-  // 3. Build context sections
-  const contextSections = contexts.map((ctx, idx) => {
-    const sourceLabel =
-      ctx.sourceType === "transcript" ? "📹 จากวิดีโอ" :
-      ctx.sourceType === "product" ? "🛍️ สินค้า" :
-      "💬 คอมเมนต์";
+  if (!fullTranscript && suggestedProducts.length === 0) {
+    console.warn(`[CommentReply] No transcript and no products for video ${videoId}`);
+    console.log(`[CommentReply] Attempting answer with general knowledge only`);
+  }
 
-    return `[${idx + 1}] ${sourceLabel} (score: ${ctx.score.toFixed(2)}):\n${ctx.text}`;
-  });
-
-  const contextText = contexts.length > 0
-    ? contextSections.join("\n\n")
-    : "(ไม่มีข้อมูลจากวิดีโอ - ใช้ความรู้ทั่วไปในการตอบ)";
+  // 3. Build transcript context section
+  const transcriptText = fullTranscript
+    ? `\n\n--- Video Transcript (เนื้อหาวิดีโอ) ---\n${fullTranscript}`
+    : "\n\n(ไม่มี transcript - ใช้ความรู้ทั่วไปในการตอบ)";
 
   // 4. Build suggested products section
   const productsText = suggestedProducts.length > 0
     ? `\n\n--- Suggested Products (แนะนำได้เฉพาะที่อยู่ในลิสต์นี้) ---\n` +
-      suggestedProducts.map((p, idx) =>
-        `${idx + 1}. ID: ${p.id}\n   Name: ${p.name}\n   Price: ${p.price}\n   URL: ${p.url}`
-      ).join("\n\n")
-    : "";
+      suggestedProducts.map((p, idx) => {
+        const priceStr = p.price ? `${p.price.toLocaleString()}฿` : "ราคาไม่ระบุ";
+        return `${idx + 1}. ${p.name}\n   ราคา: ${priceStr}\n   Link: ${p.shortURL}`;
+      }).join("\n\n")
+    : "\n\n(ไม่มีสินค้าแนะนำสำหรับวิดีโอนี้)";
 
   // 5. Build messages with few-shot examples
   // Attach guidance from Knowledge Packs: prefer Component guidance if the comment mentions components; otherwise Notebook guidance
@@ -175,7 +196,7 @@ ${FEW_SHOT_EXAMPLES}
 
 --- Context Information ---
 
-${contextText}${productsText}${guidanceText}`;
+${transcriptText}${productsText}${guidanceText}`;
 
   const messages = [
     {
@@ -188,16 +209,49 @@ ${contextText}${productsText}${guidanceText}`;
     }
   ];
 
-  console.log(`[CommentReply] Calling AI with model: ${model || 'default'}, maxTokens: ${maxTokens}, estimated input tokens: ${countTokens(systemPrompt + commentText)}`);
+  const estimatedInputTokens = countTokens(systemPrompt + commentText);
+  console.log(`[CommentReply] Calling AI with model: ${model || 'gpt-5'}, maxTokens: ${maxTokens || 5000}`);
+  console.log(`[CommentReply] Estimated input tokens: ${estimatedInputTokens}`);
+  console.log(`[CommentReply] System prompt length: ${systemPrompt.length} chars`);
+  console.log(`[CommentReply] Full transcript length: ${fullTranscript.length} chars`);
 
   // 6. Generate reply with JSON mode enabled and preferred temperature
-  const rawResponse = await chatCompletion(messages, {
-    model,
-    maxTokens,
-    jsonMode: true // Force JSON output
-  });
+  let rawResponse = "";
+  let attemptedModel = model || "gpt-5";
 
-  console.log(`[CommentReply] Raw response: ${rawResponse.substring(0, 100)}...`);
+  try {
+    rawResponse = await chatCompletion(messages, {
+      model: attemptedModel,
+      maxTokens,
+      jsonMode: true // Force JSON output
+    });
+
+    console.log(`[CommentReply] Raw response received: ${rawResponse.length} chars`);
+    console.log(`[CommentReply] Raw response preview: ${rawResponse.substring(0, 200)}...`);
+  } catch (error: any) {
+    console.error(`[CommentReply] ${attemptedModel} failed:`, error.message);
+
+    // Fallback to GPT-4 if GPT-5 fails
+    if (attemptedModel === "gpt-5") {
+      console.log(`[CommentReply] Falling back to gpt-4o-mini...`);
+      attemptedModel = "gpt-4o-mini";
+
+      try {
+        rawResponse = await chatCompletion(messages, {
+          model: attemptedModel,
+          maxTokens,
+          jsonMode: true
+        });
+
+        console.log(`[CommentReply] Fallback success: ${rawResponse.length} chars`);
+      } catch (fallbackError: any) {
+        console.error(`[CommentReply] Fallback also failed:`, fallbackError.message);
+        throw new Error(`Both GPT-5 and GPT-4 failed: ${error.message}`);
+      }
+    } else {
+      throw error;
+    }
+  }
 
   // 7. Parse JSON response
   let replyText = "";
@@ -214,8 +268,13 @@ ${contextText}${productsText}${guidanceText}`;
 
     // Check if response is empty or incomplete
     if (!cleanedResponse || cleanedResponse.length < 10) {
-      console.error("[CommentReply] Empty or too short response:", cleanedResponse);
-      throw new Error("AI response is empty or too short");
+      console.error("[CommentReply] Empty or too short response:");
+      console.error("  Raw response length:", rawResponse.length);
+      console.error("  Raw response:", rawResponse.substring(0, 500));
+      console.error("  Cleaned response:", cleanedResponse);
+      console.error("  System prompt length:", systemPrompt.length);
+      console.error("  Transcript length:", fullTranscript.length);
+      throw new Error(`AI response is empty or too short (${cleanedResponse?.length || 0} chars)`);
     }
 
     const parsed = JSON.parse(cleanedResponse);
@@ -224,13 +283,11 @@ ${contextText}${productsText}${guidanceText}`;
   products = parsed.products || [];
 
     // Validate products are in suggested pool and enforce canonical shortURL links
-    const suggestedMap = new Map(suggestedProducts.map(p => [p.id, p.url] as const));
+    const allowedUrls = new Set(suggestedProducts.map(p => p.shortURL).filter((url): url is string => url !== null));
+
+    // Filter products to only those in the suggested list
     products = (products as ProductRecommendation[])
-      .filter(p => suggestedMap.has(p.id))
-      .map(p => ({
-        ...p,
-        url: suggestedMap.get(p.id) as string
-      }))
+      .filter(p => p.url && allowedUrls.has(p.url))
       .slice(0, 2); // enforce link limit ≤ 2
 
     console.log(`[CommentReply] Parsed: ${products.length} products recommended`);
@@ -239,13 +296,13 @@ ${contextText}${productsText}${guidanceText}`;
     // - If we have suggested products, only allow those URLs in the text
     // - If no suggested products, remove all URLs from reply_text
     try {
-      const allowedUrls = new Set<string>([...suggestedMap.values()]);
+      const allowedProductUrls = new Set(suggestedProducts.map(p => p.shortURL).filter((url): url is string => url !== null));
       // Match URLs (basic pattern)
       const urlRegex = /(https?:\/\/[^\s)]+)\/??/g;
-      replyText = replyText.replace(urlRegex, (m: string) => {
-        // If we have allowed URLs and this one isn't allowed, strip it
-        if (allowedUrls.size > 0) {
-          return allowedUrls.has(m.replace(/[)\]\.,]$/g, "")) ? m : "";
+      replyText = replyText.replace(urlRegex, (url: string) => {
+        // Keep URL if it's in the allowed set
+        if (allowedProductUrls.has(url)) {
+          return url;
         }
         // If no allowed URLs at all, remove every URL
         return "";
@@ -358,16 +415,16 @@ ${contextText}${productsText}${guidanceText}`;
   const tokenUsage = {
     queryTokens: countTokens(commentText),
     systemTokens: countTokens(systemPrompt),
-    contextTokens: countTokens(contextText),
+    contextTokens: countTokens(fullTranscript),
     totalTokens: countTokens(systemPrompt + commentText + rawResponse)
   };
 
   return {
     replyText,
     products,
-    contexts,
+    contexts: [], // No longer using context chunks
     tokenUsage,
-    model: "gpt-4o-mini",
+    model: attemptedModel, // Return the model that actually worked
     rawResponse
   };
 }
