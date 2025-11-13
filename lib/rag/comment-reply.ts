@@ -1,14 +1,14 @@
 /**
  * Generate AI-powered comment replies using RAG
+ * Updated: 2-Stage Prompt System
  */
 
 import { PrismaClient } from "@prisma/client";
-import { chatCompletion } from "./openai";
-import { smartSearchV3 } from "./retriever-v3";
-import { COMMENT_REPLY_SYSTEM_PROMPT, FEW_SHOT_EXAMPLES } from "./prompts";
+import { chatCompletion, createEmbedding } from "./openai";
+import { hybridSearch } from "./retriever";
+import { FIRST_PROMPT, PURCHASE_PROMPT } from "./prompts";
 import { SearchResult } from "./schema";
-import { detectQueryIntent } from "./query-intent";
-import { NOTEBOOK_KNOWLEDGE_PACK, NOTEBOOK_USECASE_KEYWORDS, renderNotebookGuidance, COMPONENT_KNOWLEDGE_PACK, renderComponentGuidance } from "./knowledge-packs";
+import { extractPriceFromQuery, rerankByPrice } from "./price-reranking";
 
 const prisma = new PrismaClient();
 
@@ -42,6 +42,48 @@ export interface CommentReplyResponse {
   rawResponse?: string; // For debugging
 }
 
+// ============================================
+// Stage 1: Classification Response Schema
+// ============================================
+interface Stage1ResponseOther {
+  intent: "other";
+  reply_text: string;
+}
+
+interface Stage1ResponsePurchase {
+  intent: "purchase";
+  category: "Notebook" | "PC Component" | "Smartphone" | "Unknown";
+  filters: {
+    product_type?: string | null;
+    budget_min?: number | null;
+    budget_max?: number | null;
+    brand_prefer?: string[];
+    brand_avoid?: string[];
+    usage_notes?: string | null;
+    other_constraints?: string | null;
+  };
+  retrieval_plan: {
+    max_products: number;
+    AI_query: string;
+    product_query: string;
+  };
+}
+
+type Stage1Response = Stage1ResponseOther | Stage1ResponsePurchase;
+
+// ============================================
+// Stage 2: Purchase Response Schema
+// ============================================
+interface Stage2Response {
+  reply_text: string;
+  products: Array<{
+    id: string;
+    url: string;
+    reason: string;
+    confidence: number;
+  }>;
+}
+
 /**
  * Count tokens (simplified estimation)
  */
@@ -51,152 +93,191 @@ function countTokens(text: string): number {
 }
 
 /**
- * Generate comment reply with product recommendations
+ * Stage 1: Call AI to classify intent
  */
-export async function generateCommentReply(
-  request: CommentReplyRequest
-): Promise<CommentReplyResponse> {
-  const {
-    commentText,
-    videoId,
-    includeProducts = true,
-    includeTranscripts = true,
-    maxTokens = 3000, // Increased for GPT-5 reasoning model (needs tokens for reasoning + output)
-    model
-  } = request;
+async function callStage1Classification(
+  commentText: string,
+  transcripts: string,
+  model: string
+): Promise<Stage1Response> {
+  console.log(`[Stage 1] Calling classification AI...`);
 
-  console.log(`[CommentReply] Generating reply for: "${commentText.substring(0, 50)}..."`);
-
-  // Detect intent from the comment to steer retrieval and guidance
-  const intent = detectQueryIntent(commentText);
-
-  console.log(`[CommentReply] New approach: AI Summary + VideoProductPool`);
-
-  // 1. Get AI-generated summary from VideoIndex (GPT-5 summary, 400-600 words)
-  let fullTranscript = "";
-  if (includeTranscripts) {
-    const videoIndex = await prisma.videoIndex.findUnique({
-      where: { videoId },
-      select: {
-        summaryText: true,
-        summaryCategory: true,
-        title: true,
-      },
-    });
-
-    if (videoIndex?.summaryText) {
-      fullTranscript = videoIndex.summaryText;
-
-      const transcriptLength = fullTranscript.length;
-      const estimatedTokens = Math.ceil(transcriptLength / 4); // Rough estimate: 1 token ≈ 4 chars
-
-      console.log(`[CommentReply] Got AI summary: ${transcriptLength} chars (~${estimatedTokens} tokens)`);
-      console.log(`[CommentReply] Category: ${videoIndex.summaryCategory || 'Unknown'}`);
-
-      // AI summaries are already concise (400-600 words), but let's have a safety check
-      const MAX_SUMMARY_TOKENS = 2000; // ~8000 chars
-      const MAX_SUMMARY_CHARS = MAX_SUMMARY_TOKENS * 4;
-
-      if (transcriptLength > MAX_SUMMARY_CHARS) {
-        console.warn(`[CommentReply] Summary unexpectedly long (${transcriptLength} chars), truncating to ${MAX_SUMMARY_CHARS}`);
-        fullTranscript = fullTranscript.substring(0, MAX_SUMMARY_CHARS) + "\n\n... (summary truncated)";
-      }
-    } else {
-      console.warn(`[CommentReply] No AI summary found for video ${videoId}`);
+  const messages = [
+    {
+      role: "system" as const,
+      content: FIRST_PROMPT
+    },
+    {
+      role: "user" as const,
+      content: `--- Video Transcript ---\n${transcripts}\n\n--- User Comment ---\n"${commentText}"\n\nกรุณาวิเคราะห์และตอบเป็น JSON object เท่านั้น`
     }
+  ];
+
+  const rawResponse = await chatCompletion(messages, {
+    model: model || "gpt-4o-mini",
+    maxTokens: 1500,
+    jsonMode: true
+  });
+
+  console.log(`[Stage 1] Raw response: ${rawResponse.substring(0, 200)}...`);
+
+  // Parse response
+  let cleanedResponse = rawResponse.trim();
+  if (cleanedResponse.startsWith("```json")) {
+    cleanedResponse = cleanedResponse.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+  } else if (cleanedResponse.startsWith("```")) {
+    cleanedResponse = cleanedResponse.replace(/```\n?/g, "");
   }
 
-  // 2. Get Top 20 products from VideoProductPool
-  const suggestedProducts: Array<{
+  const parsed = JSON.parse(cleanedResponse);
+
+  // Determine intent
+  if (parsed.reply_text && !parsed.category && !parsed.filters) {
+    // This is "other" response
+    return {
+      intent: "other",
+      reply_text: parsed.reply_text
+    } as Stage1ResponseOther;
+  } else {
+    // This is "purchase" response
+    return {
+      intent: "purchase",
+      category: parsed.category || "Unknown",
+      filters: parsed.filters || {},
+      retrieval_plan: parsed.retrieval_plan || {
+        max_products: 30,
+        AI_query: commentText,
+        product_query: commentText
+      }
+    } as Stage1ResponsePurchase;
+  }
+}
+
+/**
+ * Search products by category + filters
+ * Note: ใช้ original comment text แทนการสร้าง query จาก filters
+ * เพราะ embedding ทำงานได้ดีกับภาษาธรรมชาติมากกว่า structured query
+ */
+async function searchByCategoryFilters(
+  filters: Stage1ResponsePurchase["filters"],
+  commentText: string,
+  maxProducts: number,
+  queryEmbedding: number[],
+  category: string
+): Promise<SearchResult[]> {
+  console.log(`[Search 2.1] Searching by category + filters...`);
+  console.log(`[Search 2.1] Filters:`, JSON.stringify(filters, null, 2));
+
+  // เพิ่มชื่อ category เข้าไปใน query เพื่อให้ search ได้แม่นยำขึ้น
+  let categoryKeyword = "";
+  if (category === "Notebook") {
+    categoryKeyword = " โน้ตบุ๊ก notebook";
+  } else if (category === "Smartphone") {
+    categoryKeyword = " มือถือ smartphone";
+  } else if (category === "PC Component") {
+    categoryKeyword = " PC component คอมพิวเตอร์";
+  }
+
+  const searchQuery = commentText + categoryKeyword;
+  console.log(`[Search 2.1] Query (with category): "${searchQuery}"`);
+
+  // Perform hybrid search with category filter
+  const results = await hybridSearch(searchQuery, {
+    topK: maxProducts,
+    sourceType: "product",
+    minScore: 0.2,  // Lowered from 0.3 to work with longer Thai queries
+    queryEmbedding,
+    category  // Filter by category to ensure we get correct product type
+  });
+
+  console.log(`[Search 2.1] Found ${results.length} products`);
+
+  // Apply price re-ranking if budget specified
+  if (filters.budget_max) {
+    const reranked = rerankByPrice(results, filters.budget_max, {
+      priceWeight: 0.4,
+      semanticWeight: 0.6
+    });
+    console.log(`[Search 2.1] Re-ranked by price (budget: ${filters.budget_max})`);
+    return reranked;
+  }
+
+  return results;
+}
+
+/**
+ * Search products by product_query
+ */
+async function searchByProductQuery(
+  productQuery: string,
+  maxProducts: number,
+  queryEmbedding: number[],
+  category: string
+): Promise<SearchResult[]> {
+  console.log(`[Search 2.2] Searching by product_query: "${productQuery}"`);
+
+  // Extract price from product_query
+  const queryPrice = extractPriceFromQuery(productQuery);
+
+  // Perform hybrid search with category filter
+  let results = await hybridSearch(productQuery, {
+    topK: maxProducts,
+    sourceType: "product",
+    minScore: 0.2,  // Lowered from 0.3 to work with longer Thai queries
+    queryEmbedding,
+    category  // Filter by category
+  });
+
+  console.log(`[Search 2.2] Found ${results.length} products`);
+
+  // Apply price re-ranking if price detected
+  if (queryPrice) {
+    results = rerankByPrice(results, queryPrice, {
+      priceWeight: 0.4,
+      semanticWeight: 0.6
+    });
+    console.log(`[Search 2.2] Re-ranked by price (${queryPrice} บาท)`);
+  }
+
+  return results;
+}
+
+/**
+ * Stage 2: Call AI for purchase recommendation
+ */
+async function callStage2Purchase(
+  commentText: string,
+  aiQuery: string,
+  transcripts: string,
+  products: Array<{
+    id: string;
     name: string;
     price: number | null;
     shortURL: string | null;
-  }> = [];
+  }>,
+  model: string
+): Promise<Stage2Response> {
+  console.log(`[Stage 2] Calling purchase recommendation AI...`);
 
-  if (includeProducts) {
-    const poolEntries = await prisma.videoProductPool.findMany({
-      where: { videoId },
-      orderBy: { relevanceScore: 'desc' },
-      take: 20,
-    });
-
-    console.log(`[CommentReply] Found ${poolEntries.length} products in pool`);
-
-    // Get product details
-    const productIds = poolEntries.map(p => p.productId);
-    const products = await prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-      },
-      select: {
-        id: true,
-        name: true,
-        price: true,
-        shortURL: true,
-      },
-    });
-
-    // Map to keep order from pool
-    const productMap = new Map(products.map(p => [p.id, p]));
-
-    for (const entry of poolEntries) {
-      const product = productMap.get(entry.productId);
-      if (product && product.shortURL) {
-        suggestedProducts.push({
-          name: product.name,
-          price: product.price,
-          shortURL: product.shortURL,
-        });
-      }
-    }
-
-    console.log(`[CommentReply] Prepared ${suggestedProducts.length} suggested products`);
-  }
-
-  if (!fullTranscript && suggestedProducts.length === 0) {
-    console.warn(`[CommentReply] No transcript and no products for video ${videoId}`);
-    console.log(`[CommentReply] Attempting answer with general knowledge only`);
-  }
-
-  // 3. Build transcript context section
-  const transcriptText = fullTranscript
-    ? `\n\n--- Video Transcript (เนื้อหาวิดีโอ) ---\n${fullTranscript}`
-    : "\n\n(ไม่มี transcript - ใช้ความรู้ทั่วไปในการตอบ)";
-
-  // 4. Build suggested products section
-  const productsText = suggestedProducts.length > 0
-    ? `\n\n--- Suggested Products (แนะนำได้เฉพาะที่อยู่ในลิสต์นี้) ---\n` +
-      suggestedProducts.map((p, idx) => {
+  // Build suggested products context
+  const productsText = products.length > 0
+    ? `\n\n--- Suggested Products ---\n` +
+      products.map((p, idx) => {
         const priceStr = p.price ? `${p.price.toLocaleString()}฿` : "ราคาไม่ระบุ";
-        return `${idx + 1}. ${p.name}\n   ราคา: ${priceStr}\n   Link: ${p.shortURL}`;
-      }).join("\n\n")
-    : "\n\n(ไม่มีสินค้าแนะนำสำหรับวิดีโอนี้)";
+        return `${idx + 1}. id="${p.id}" name="${p.name}" price=${priceStr} url="${p.shortURL}"`;
+      }).join("\n")
+    : "\n\n(ไม่มีสินค้าแนะนำ)";
 
-  // 5. Build messages with few-shot examples
-  // Attach guidance from Knowledge Packs: prefer Component guidance if the comment mentions components; otherwise Notebook guidance
-  let guidanceText = "";
-  if (intent.components && intent.components.length > 0) {
-    // Choose the first detected component category
-    const comp = intent.components[0];
-    const pack = COMPONENT_KNOWLEDGE_PACK.find(p => p.category === comp) || COMPONENT_KNOWLEDGE_PACK[0];
-    guidanceText = `\n\n--- Knowledge Pack (Component Guidance - ${pack.category}) ---\n${renderComponentGuidance(pack)}`;
-  } else {
-    // Fallback to Notebook guidance routed by usageCategory if available
-    let targetPack = undefined as ReturnType<typeof NOTEBOOK_KNOWLEDGE_PACK.find>;
-    if (intent.usageCategory) {
-      targetPack = NOTEBOOK_KNOWLEDGE_PACK.find((p) => p.category === intent.usageCategory);
-    }
-    const pack = targetPack || NOTEBOOK_KNOWLEDGE_PACK[0];
-    guidanceText = `\n\n--- Knowledge Pack (Notebook Guidance) ---\n${renderNotebookGuidance(pack)}`;
-  }
-
-  const systemPrompt = `${COMMENT_REPLY_SYSTEM_PROMPT}
-
-${FEW_SHOT_EXAMPLES}
+  const systemPrompt = `${PURCHASE_PROMPT}
 
 --- Context Information ---
 
-${transcriptText}${productsText}${guidanceText}`;
+--- Video Transcript ---
+${transcripts}
+
+--- AI Query (จากการวิเคราะห์ก่อนหน้า) ---
+${aiQuery}
+${productsText}`;
 
   const messages = [
     {
@@ -205,227 +286,312 @@ ${transcriptText}${productsText}${guidanceText}`;
     },
     {
       role: "user" as const,
-      content: `คอมเมนต์: "${commentText}"\n\nกรุณาตอบเป็น valid JSON object เท่านั้น ตามรูปแบบ:\n{"reply_text": "...", "products": [...]}`
+      content: `คอมเมนต์: "${commentText}"\n\nกรุณาตอบเป็น valid JSON object เท่านั้น ตามรูปแบบที่กำหนด:\n\n**สำคัญ**: ต้องมีทั้ง reply_text และ products array (ถ้ามี suggested products ให้เลือกอย่างน้อย 1-2 รุ่นที่เหมาะสมที่สุด)\n\n{\n  "reply_text": "...",\n  "products": [\n    {"id": "...", "url": "...", "reason": "...", "confidence": 0.8}\n  ]\n}`
     }
   ];
 
-  const estimatedInputTokens = countTokens(systemPrompt + commentText);
-  console.log(`[CommentReply] Calling AI with model: ${model || 'gpt-5'}, maxTokens: ${maxTokens || 5000}`);
-  console.log(`[CommentReply] Estimated input tokens: ${estimatedInputTokens}`);
-  console.log(`[CommentReply] System prompt length: ${systemPrompt.length} chars`);
-  console.log(`[CommentReply] Full transcript length: ${fullTranscript.length} chars`);
+  const rawResponse = await chatCompletion(messages, {
+    model: model || "gpt-4o-mini",
+    maxTokens: 2000,
+    jsonMode: true
+  });
 
-  // 6. Generate reply with JSON mode enabled and preferred temperature
-  let rawResponse = "";
-  let attemptedModel = model || "gpt-5";
-
-  try {
-    rawResponse = await chatCompletion(messages, {
-      model: attemptedModel,
-      maxTokens,
-      jsonMode: true // Force JSON output
-    });
-
-    console.log(`[CommentReply] Raw response received: ${rawResponse.length} chars`);
-    console.log(`[CommentReply] Raw response preview: ${rawResponse.substring(0, 200)}...`);
-  } catch (error: any) {
-    console.error(`[CommentReply] ${attemptedModel} failed:`, error.message);
-
-    // Fallback to GPT-4 if GPT-5 fails
-    if (attemptedModel === "gpt-5") {
-      console.log(`[CommentReply] Falling back to gpt-4o-mini...`);
-      attemptedModel = "gpt-4o-mini";
-
-      try {
-        rawResponse = await chatCompletion(messages, {
-          model: attemptedModel,
-          maxTokens,
-          jsonMode: true
-        });
-
-        console.log(`[CommentReply] Fallback success: ${rawResponse.length} chars`);
-      } catch (fallbackError: any) {
-        console.error(`[CommentReply] Fallback also failed:`, fallbackError.message);
-        throw new Error(`Both GPT-5 and GPT-4 failed: ${error.message}`);
-      }
-    } else {
-      throw error;
-    }
+  // Parse response
+  let cleanedResponse = rawResponse.trim();
+  if (cleanedResponse.startsWith("```json")) {
+    cleanedResponse = cleanedResponse.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+  } else if (cleanedResponse.startsWith("```")) {
+    cleanedResponse = cleanedResponse.replace(/```\n?/g, "");
   }
 
-  // 7. Parse JSON response
-  let replyText = "";
-  let products: ProductRecommendation[] = [];
+  const parsed = JSON.parse(cleanedResponse);
 
+  console.log(`[Stage 2] Parsed reply_text length: ${(parsed.reply_text || "").length} chars`);
+  console.log(`[Stage 2] Parsed products array: ${parsed.products ? parsed.products.length : 0} items`);
+  if (parsed.products && parsed.products.length > 0) {
+    console.log(`[Stage 2] First product:`, JSON.stringify(parsed.products[0], null, 2));
+  }
+
+  return {
+    reply_text: parsed.reply_text || "",
+    products: parsed.products || []
+  };
+}
+
+/**
+ * Get all transcript chunks for a video
+ */
+async function getAllTranscripts(videoId: string): Promise<string> {
+  console.log(`[Transcripts] Fetching all transcript chunks for video ${videoId}...`);
+
+  const allTranscriptChunks = await prisma.$queryRaw<Array<{
+    id: number;
+    docId: number;
+    chunkIndex: number;
+    text: string;
+    meta: any;
+  }>>`
+    SELECT
+      c.id,
+      c."docId",
+      c."chunkIndex",
+      c.text,
+      c.meta
+    FROM "RagChunk" c
+    JOIN "RagDocument" d ON c."docId" = d.id
+    WHERE d."sourceType" = 'transcript'
+      AND d.meta->>'videoId' = ${videoId}
+    ORDER BY c."chunkIndex" ASC
+  `;
+
+  console.log(`[Transcripts] Found ${allTranscriptChunks.length} total transcript chunks`);
+
+  return allTranscriptChunks.map(chunk => chunk.text).join('\n\n---\n\n');
+}
+
+/**
+ * Generate comment reply with 2-stage prompt system
+ */
+export async function generateCommentReply(
+  request: CommentReplyRequest
+): Promise<CommentReplyResponse> {
+  const {
+    commentText,
+    videoId,
+    maxTokens = 3000,
+    model
+  } = request;
+
+  console.log(`[CommentReply] 2-Stage System: Generating reply for: "${commentText.substring(0, 50)}..."`);
+
+  const startTime = Date.now();
+
+  // ============================================
+  // STAGE 1: Classification & Intent Analysis
+  // ============================================
+
+  // Step 1: Get all transcripts
+  const transcripts = await getAllTranscripts(videoId);
+
+  // Step 2: Call Stage 1 AI
+  let stage1Response: Stage1Response;
   try {
-    // Remove markdown code blocks if present
-    let cleanedResponse = rawResponse.trim();
-    if (cleanedResponse.startsWith("```json")) {
-      cleanedResponse = cleanedResponse.replace(/```json\n?/g, "").replace(/```\n?/g, "");
-    } else if (cleanedResponse.startsWith("```")) {
-      cleanedResponse = cleanedResponse.replace(/```\n?/g, "");
-    }
+    stage1Response = await callStage1Classification(commentText, transcripts, model || "gpt-4o-mini");
+  } catch (error) {
+    console.error(`[Stage 1] Error:`, error);
+    throw error;
+  }
 
-    // Check if response is empty or incomplete
-    if (!cleanedResponse || cleanedResponse.length < 10) {
-      console.error("[CommentReply] Empty or too short response:");
-      console.error("  Raw response length:", rawResponse.length);
-      console.error("  Raw response:", rawResponse.substring(0, 500));
-      console.error("  Cleaned response:", cleanedResponse);
-      console.error("  System prompt length:", systemPrompt.length);
-      console.error("  Transcript length:", fullTranscript.length);
-      throw new Error(`AI response is empty or too short (${cleanedResponse?.length || 0} chars)`);
-    }
+  console.log(`[Stage 1] Intent: ${stage1Response.intent}`);
 
-    const parsed = JSON.parse(cleanedResponse);
+  // If intent is "other", return immediately
+  if (stage1Response.intent === "other") {
+    console.log(`[Stage 1] Non-purchase query - returning direct response`);
 
-    replyText = parsed.reply_text || parsed.replyText || "";
-  products = parsed.products || [];
+    const tokenUsage = {
+      queryTokens: countTokens(commentText),
+      systemTokens: countTokens(FIRST_PROMPT),
+      contextTokens: countTokens(transcripts),
+      totalTokens: countTokens(FIRST_PROMPT + commentText + transcripts + stage1Response.reply_text)
+    };
 
-    // Validate products are in suggested pool and enforce canonical shortURL links
-    const allowedUrls = new Set(suggestedProducts.map(p => p.shortURL).filter((url): url is string => url !== null));
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[CommentReply] ✅ Completed in ${duration}s (Stage 1 only)`);
 
-    // Filter products to only those in the suggested list
-    products = (products as ProductRecommendation[])
-      .filter(p => p.url && allowedUrls.has(p.url))
-      .slice(0, 2); // enforce link limit ≤ 2
+    return {
+      replyText: stage1Response.reply_text,
+      products: [],
+      contexts: [],
+      tokenUsage,
+      model: model || "gpt-4o-mini"
+    };
+  }
 
-    console.log(`[CommentReply] Parsed: ${products.length} products recommended`);
+  // ============================================
+  // STAGE 2: Purchase Recommendation
+  // ============================================
 
-    // Sanitize reply_text: remove any URLs not in the suggested pool
-    // - If we have suggested products, only allow those URLs in the text
-    // - If no suggested products, remove all URLs from reply_text
+  const purchaseResponse = stage1Response as Stage1ResponsePurchase;
+  console.log(`[Stage 2] Category: ${purchaseResponse.category}`);
+  console.log(`[Stage 2] Max products: ${purchaseResponse.retrieval_plan.max_products}`);
+
+  // Step 1: Create embedding once
+  console.log(`[Stage 2] Creating embedding for search...`);
+  const queryEmbedding = await createEmbedding(commentText);
+
+  // Step 2.1: Search by category + filters (using original comment text)
+  const filterResults = await searchByCategoryFilters(
+    purchaseResponse.filters,
+    commentText,
+    purchaseResponse.retrieval_plan.max_products,
+    queryEmbedding,
+    purchaseResponse.category
+  );
+
+  const filterMaxScore = filterResults.length > 0
+    ? Math.max(...filterResults.map(r => r.score))
+    : 0;
+
+  console.log(`[Search 2.1] Max score: ${filterMaxScore.toFixed(3)}`);
+
+  // Step 2.2: Search by product_query
+  const queryResults = await searchByProductQuery(
+    purchaseResponse.retrieval_plan.product_query,
+    purchaseResponse.retrieval_plan.max_products,
+    queryEmbedding
+  );
+
+  const queryMaxScore = queryResults.length > 0
+    ? Math.max(...queryResults.map(r => r.score))
+    : 0;
+
+  console.log(`[Search 2.2] Max score: ${queryMaxScore.toFixed(3)}`);
+
+  // Step 3: Compare and select better results
+  let selectedResults: SearchResult[];
+  let selectedMethod: string;
+
+  if (queryMaxScore > filterMaxScore) {
+    selectedResults = queryResults;
+    selectedMethod = "product_query";
+    console.log(`[Search] ✅ Using product_query results (score: ${queryMaxScore.toFixed(3)} > ${filterMaxScore.toFixed(3)})`);
+  } else {
+    selectedResults = filterResults;
+    selectedMethod = "category+filters";
+    console.log(`[Search] ✅ Using category+filters results (score: ${filterMaxScore.toFixed(3)} >= ${queryMaxScore.toFixed(3)})`);
+  }
+
+  // Step 4: Get product details
+  console.log(`[Stage 2] Fetching product details...`);
+
+  const productSourceIds = Array.from(new Set(selectedResults.map(r => r.sourceId)));
+  console.log(`[Stage 2] Product source IDs (${productSourceIds.length}):`, productSourceIds.slice(0, 5));
+
+  // First, try without filters to see if products exist
+  const allProducts = await prisma.product.findMany({
+    where: {
+      shopeeProductId: { in: productSourceIds },
+    },
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      shortURL: true,
+      shopeeProductId: true,
+      inStock: true,
+      hasAffiliate: true,
+    },
+    take: 20,
+  });
+
+  console.log(`[Stage 2] Found ${allProducts.length} products in DB (before filters)`);
+  console.log(`[Stage 2] Products with shortURL: ${allProducts.filter(p => p.shortURL).length}`);
+  console.log(`[Stage 2] Products inStock: ${allProducts.filter(p => p.inStock).length}`);
+  console.log(`[Stage 2] Products hasAffiliate: ${allProducts.filter(p => p.hasAffiliate).length}`);
+
+  // Apply filters
+  const productsFromDb = allProducts.filter(p => p.inStock && p.hasAffiliate && p.shortURL);
+
+  const suggestedProducts = productsFromDb
+    .filter(p => p.shortURL)
+    .map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      shortURL: p.shortURL
+    }));
+
+  console.log(`[Stage 2] Prepared ${suggestedProducts.length} suggested products`);
+  if (suggestedProducts.length > 0) {
+    console.log(`[Stage 2] Sample suggested product:`, {
+      id: suggestedProducts[0].id,
+      name: suggestedProducts[0].name?.substring(0, 50),
+      url: suggestedProducts[0].shortURL
+    });
+  }
+
+  // Step 5: Call Stage 2 AI
+  let stage2Response: Stage2Response;
+  try {
+    stage2Response = await callStage2Purchase(
+      commentText,
+      purchaseResponse.retrieval_plan.AI_query,
+      transcripts,
+      suggestedProducts,
+      model || "gpt-4o-mini"
+    );
+  } catch (error) {
+    console.error(`[Stage 2] Error:`, error);
+    throw error;
+  }
+
+  // Step 6: Validate and filter products
+  const allowedUrls = new Set(suggestedProducts.map(p => p.shortURL).filter((url): url is string => url !== null));
+
+  console.log(`[Stage 2] Allowed URLs count: ${allowedUrls.size}`);
+  console.log(`[Stage 2] AI returned products count: ${stage2Response.products.length}`);
+
+  if (stage2Response.products.length > 0) {
+    console.log(`[Stage 2] AI product URLs:`, stage2Response.products.map(p => p.url));
+    console.log(`[Stage 2] Sample allowed URLs:`, Array.from(allowedUrls).slice(0, 5));
+  }
+
+  let products = stage2Response.products
+    .filter(p => p.url && allowedUrls.has(p.url))
+    .slice(0, 3); // Max 3 products
+
+  console.log(`[Stage 2] Validated ${products.length} products`);
+
+  // Step 7: Add shortURLs to reply text if missing
+  let replyText = stage2Response.reply_text;
+
+  if (products.length > 0 && replyText.includes("สินค้าแนะนำ")) {
+    console.log(`[Stage 2] Adding shortURLs to reply text...`);
+
     try {
-      const allowedProductUrls = new Set(suggestedProducts.map(p => p.shortURL).filter((url): url is string => url !== null));
-      // Match URLs (basic pattern)
-      const urlRegex = /(https?:\/\/[^\s)]+)\/??/g;
-      replyText = replyText.replace(urlRegex, (url: string) => {
-        // Keep URL if it's in the allowed set
-        if (allowedProductUrls.has(url)) {
-          return url;
-        }
-        // If no allowed URLs at all, remove every URL
-        return "";
-      }).replace(/ {2,}/g, " ").trim(); // Only replace multiple spaces, keep newlines
-    } catch (_) {
-      // Non-fatal: keep original replyText if sanitization fails
-    }
-
-    // Add shortURL to product recommendations in reply text if not already present
-    if (products.length > 0 && replyText.includes("สินค้าแนะนำ")) {
-      console.log(`[CommentReply] Attempting to add shortURLs for ${products.length} products`);
-      try {
-        // Build a map of product IDs to their info (name + shortURL)
-        const productInfoMap = new Map<string, { name: string; url: string }>();
-        for (const prod of products) {
-          const suggestedProduct = suggestedProducts.find(p => p.id === prod.id);
-          if (suggestedProduct) {
-            productInfoMap.set(prod.id, {
-              name: suggestedProduct.name,
-              url: suggestedProduct.url
-            });
-            console.log(`[CommentReply] Product: ${suggestedProduct.name} -> ${suggestedProduct.url}`);
-          }
-        }
-
-        // Check each product and add shortURL if missing
-        for (const [productId, info] of productInfoMap) {
-          // Extract key parts from product name for flexible matching
-          // Remove prefix in brackets like [แนะนำ], [สินค้ามายด์]
-          let nameForMatching = info.name.replace(/^\[[^\]]+\]/g, '').trim();
-          
-          // Get main brand and model (first few significant words)
-          // e.g., "ASUS VIVOBOOK S16" or "MSI THIN 15"
-          const nameParts = nameForMatching.split(/\s+/);
-          const significantParts = nameParts.slice(0, Math.min(3, nameParts.length));
-          
-          // Try multiple patterns to match
-          const patterns: RegExp[] = [];
-          
-          // Pattern 1: Match with prefix removal - line contains model number
-          // e.g., "- [prefix]เอสุส รีวิวมือ ASUS VIVOBOOK 16 X1605VA-MB735WA"
-          // Look for pattern: Letter+Digit+Hyphen (e.g., S3607VA-RP575WA)
-          const modelMatch = nameForMatching.match(/[A-Z]\d+[A-Z]*-[A-Z0-9]+/);
+      for (const prod of products) {
+        const suggestedProduct = suggestedProducts.find(p => p.id === prod.id);
+        if (suggestedProduct && suggestedProduct.shortURL) {
+          // Extract model number for matching
+          const modelMatch = suggestedProduct.name.match(/[A-Z]\d+[A-Z]*-[A-Z0-9]+/);
           if (modelMatch) {
             const model = modelMatch[0];
-            console.log(`[CommentReply] Extracted model: ${model} from ${nameForMatching}`);
-            // Escape special characters in model number
             const escapedModel = model.replace(/[-]/g, '\\-');
-            // Match line with this exact model number, followed by price, without URL
-            patterns.push(new RegExp(`(-[^\\n]*${escapedModel}[^\\n]*?บาท)(?![^\\n]*https?://)`, 'gi'));
-          } else {
-            console.log(`[CommentReply] No model match found in: ${nameForMatching}`);
-          }
-          
-          // Pattern 2: Match first 2-3 significant words (brand + series)
-          if (significantParts.length >= 2) {
-            const keyWords = significantParts.slice(0, 2).join('.*?');
-            patterns.push(new RegExp(`(-[^\\n]*${keyWords}[^\\n]*?บาท)(?![^\\n]*https?://)`, 'gi'));
-          }
-          
-          // Apply patterns
-          for (const pattern of patterns) {
+            const pattern = new RegExp(`(-[^\\n]*${escapedModel}[^\\n]*?บาท)(?![^\\n]*https?://)`, 'gi');
+
             const beforeReplace = replyText;
             replyText = replyText.replace(pattern, (match) => {
-              console.log(`[CommentReply] Match found: "${match.substring(0, 50)}..."`);
-              // Add shortURL if not present in this line
-              return `${match} ${info.url}`;
+              return `${match} ${suggestedProduct.shortURL}`;
             });
-            
-            // If we successfully added URL, break (don't try other patterns)
+
             if (replyText !== beforeReplace) {
-              console.log(`[CommentReply] Successfully added shortURL: ${info.url}`);
-              break;
+              console.log(`[Stage 2] ✅ Added shortURL: ${suggestedProduct.shortURL}`);
             }
           }
         }
-        
-        console.log(`[CommentReply] Finished adding shortURLs to product recommendations`);
-      } catch (err) {
-        console.error(`[CommentReply] Failed to add shortURLs to reply text:`, err);
       }
-    } else {
-      console.log(`[CommentReply] Skipping shortURL addition: products.length=${products.length}, has "สินค้าแนะนำ"=${replyText.includes("สินค้าแนะนำ")}`);
+    } catch (err) {
+      console.error(`[Stage 2] Failed to add shortURLs:`, err);
     }
-
-  } catch (error) {
-    console.error(`[CommentReply] JSON parsing failed:`, error);
-    console.error(`[CommentReply] Raw response (first 500 chars):`, rawResponse.substring(0, 500));
-    console.error(`[CommentReply] Raw response (full):`, rawResponse);
-
-    // Fallback: try to extract reply_text from partial JSON
-    try {
-      const replyMatch = rawResponse.match(/"reply_text"\s*:\s*"([^"]*)"/);
-      if (replyMatch && replyMatch[1]) {
-        replyText = replyMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
-        console.log(`[CommentReply] Extracted reply_text from partial JSON (${replyText.length} chars)`);
-      } else {
-        // Last resort: use raw response as reply
-        replyText = "ขออภัยครับ ระบบประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
-        console.error(`[CommentReply] Could not extract reply_text, using fallback message`);
-      }
-    } catch (extractError) {
-      replyText = "ขออภัยครับ ระบบประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
-      console.error(`[CommentReply] Fallback extraction failed:`, extractError);
-    }
-    products = [];
   }
 
-  // 8. Calculate token usage
+  // Step 8: Calculate token usage
   const tokenUsage = {
     queryTokens: countTokens(commentText),
-    systemTokens: countTokens(systemPrompt),
-    contextTokens: countTokens(fullTranscript),
-    totalTokens: countTokens(systemPrompt + commentText + rawResponse)
+    systemTokens: countTokens(FIRST_PROMPT + PURCHASE_PROMPT),
+    contextTokens: countTokens(transcripts),
+    totalTokens: countTokens(FIRST_PROMPT + PURCHASE_PROMPT + commentText + transcripts + replyText)
   };
+
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  console.log(`[CommentReply] ✅ Completed in ${duration}s (2-Stage: ${selectedMethod})`);
 
   return {
     replyText,
     products,
-    contexts: [], // No longer using context chunks
+    contexts: selectedResults,
     tokenUsage,
-    model: attemptedModel, // Return the model that actually worked
-    rawResponse
+    model: model || "gpt-4o-mini"
   };
 }
 
@@ -438,7 +604,6 @@ export async function generateBatchCommentReplies(
   options: {
     includeProducts?: boolean;
     includeTranscripts?: boolean;
-    temperature?: number;
   } = {}
 ): Promise<{
   results: Array<{

@@ -2,6 +2,9 @@ import { PrismaClient } from "@prisma/client";
 import { createEmbedding } from "./openai";
 import { SearchQuery, SearchResult } from "./schema";
 
+// Re-export SearchResult for convenience
+export type { SearchResult };
+
 const prisma = new PrismaClient();
 
 /**
@@ -14,6 +17,7 @@ export async function vectorSearch(
     sourceType?: "comment" | "transcript" | "product";
     videoId?: string;
     minScore?: number;
+    category?: string; // Filter by product category
   } = {}
 ): Promise<SearchResult[]> {
   const {
@@ -21,6 +25,7 @@ export async function vectorSearch(
     sourceType,
     videoId,
     minScore = 0.0,
+    category,
   } = options;
 
   // Build WHERE clause conditions
@@ -37,6 +42,13 @@ export async function vectorSearch(
   if (videoId) {
     conditions.push(`d.meta->>'videoId' = $${paramIndex}`);
     params.push(videoId);
+    paramIndex++;
+  }
+
+  // Filter by category (for products)
+  if (category && sourceType === "product") {
+    conditions.push(`c.meta->>'category' = $${paramIndex}`);
+    params.push(category);
     paramIndex++;
   }
 
@@ -99,12 +111,14 @@ export async function keywordSearch(
     topK?: number;
     sourceType?: "comment" | "transcript" | "product";
     videoId?: string;
+    category?: string; // Filter by product category
   } = {}
 ): Promise<SearchResult[]> {
   const {
     topK = 6,
     sourceType,
     videoId,
+    category,
   } = options;
 
   // Build WHERE clause
@@ -121,6 +135,13 @@ export async function keywordSearch(
   if (videoId) {
     conditions.push(`d.meta->>'videoId' = $${paramIndex}`);
     params.push(videoId);
+    paramIndex++;
+  }
+
+  // Filter by category (for products)
+  if (category && sourceType === "product") {
+    conditions.push(`c.meta->>'category' = $${paramIndex}`);
+    params.push(category);
     paramIndex++;
   }
 
@@ -185,6 +206,8 @@ export async function hybridSearch(
     minScore?: number;
     vectorWeight?: number; // Weight for vector scores (0-1)
     keywordWeight?: number; // Weight for keyword scores (0-1)
+    queryEmbedding?: number[]; // Optional: pre-computed embedding
+    category?: string; // Filter by product category
   } = {}
 ): Promise<SearchResult[]> {
   const {
@@ -194,11 +217,13 @@ export async function hybridSearch(
     minScore = 0.0,
     vectorWeight = 0.7,
     keywordWeight = 0.3,
+    queryEmbedding: providedEmbedding,
+    category,
   } = options;
 
   try {
-    // Generate query embedding
-    const queryEmbedding = await createEmbedding(query);
+    // Use provided embedding or generate new one
+    const queryEmbedding = providedEmbedding || await createEmbedding(query);
 
     // Perform both searches in parallel
     const [vectorResults, keywordResults] = await Promise.all([
@@ -207,11 +232,13 @@ export async function hybridSearch(
         sourceType,
         videoId,
         minScore: 0, // Don't filter yet
+        category,
       }),
       keywordSearch(query, {
         topK: topK * 2,
         sourceType,
         videoId,
+        category,
       }),
     ]);
 
