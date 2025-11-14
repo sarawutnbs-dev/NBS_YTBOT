@@ -162,7 +162,6 @@ async function searchByCategoryFilters(
   filters: Stage1ResponsePurchase["filters"],
   commentText: string,
   maxProducts: number,
-  queryEmbedding: number[],
   category: string
 ): Promise<SearchResult[]> {
   console.log(`[Search 2.1] Searching by category + filters...`);
@@ -182,11 +181,11 @@ async function searchByCategoryFilters(
   console.log(`[Search 2.1] Query (with category): "${searchQuery}"`);
 
   // Perform hybrid search with category filter
+  // Don't pass queryEmbedding - let hybridSearch create it from searchQuery
   const results = await hybridSearch(searchQuery, {
     topK: maxProducts,
     sourceType: "product",
     minScore: 0.2,  // Lowered from 0.3 to work with longer Thai queries
-    queryEmbedding,
     category  // Filter by category to ensure we get correct product type
   });
 
@@ -211,7 +210,6 @@ async function searchByCategoryFilters(
 async function searchByProductQuery(
   productQuery: string,
   maxProducts: number,
-  queryEmbedding: number[],
   category: string
 ): Promise<SearchResult[]> {
   console.log(`[Search 2.2] Searching by product_query: "${productQuery}"`);
@@ -220,11 +218,11 @@ async function searchByProductQuery(
   const queryPrice = extractPriceFromQuery(productQuery);
 
   // Perform hybrid search with category filter
+  // Don't pass queryEmbedding - let hybridSearch create it from productQuery
   let results = await hybridSearch(productQuery, {
     topK: maxProducts,
     sourceType: "product",
     minScore: 0.2,  // Lowered from 0.3 to work with longer Thai queries
-    queryEmbedding,
     category  // Filter by category
   });
 
@@ -255,9 +253,21 @@ async function callStage2Purchase(
     price: number | null;
     shortURL: string | null;
   }>,
-  model: string
+  model: string,
+  filters?: {
+    budget_min?: number | null;
+    budget_max?: number | null;
+  }
 ): Promise<Stage2Response> {
   console.log(`[Stage 2] Calling purchase recommendation AI...`);
+
+  // Build budget context
+  let budgetContext = "";
+  if (filters?.budget_max) {
+    const budgetMin = filters.budget_min || 0;
+    const budgetMax = filters.budget_max;
+    budgetContext = `\n\n--- งบประมาณ ---\nงบประมาณ: ${budgetMin.toLocaleString()}-${budgetMax.toLocaleString()} บาท\n**สำคัญ**: ต้องเลือกสินค้าที่มีราคาอยู่ในงบประมาณนี้เท่านั้น ห้ามแนะนำสินค้าที่เกิน ${budgetMax.toLocaleString()} บาท`;
+  }
 
   // Build suggested products context
   const productsText = products.length > 0
@@ -277,6 +287,7 @@ ${transcripts}
 
 --- AI Query (จากการวิเคราะห์ก่อนหน้า) ---
 ${aiQuery}
+${budgetContext}
 ${productsText}`;
 
   const messages = [
@@ -415,16 +426,11 @@ export async function generateCommentReply(
   console.log(`[Stage 2] Category: ${purchaseResponse.category}`);
   console.log(`[Stage 2] Max products: ${purchaseResponse.retrieval_plan.max_products}`);
 
-  // Step 1: Create embedding once
-  console.log(`[Stage 2] Creating embedding for search...`);
-  const queryEmbedding = await createEmbedding(commentText);
-
   // Step 2.1: Search by category + filters (using original comment text)
   const filterResults = await searchByCategoryFilters(
     purchaseResponse.filters,
     commentText,
     purchaseResponse.retrieval_plan.max_products,
-    queryEmbedding,
     purchaseResponse.category
   );
 
@@ -438,7 +444,7 @@ export async function generateCommentReply(
   const queryResults = await searchByProductQuery(
     purchaseResponse.retrieval_plan.product_query,
     purchaseResponse.retrieval_plan.max_products,
-    queryEmbedding
+    purchaseResponse.category
   );
 
   const queryMaxScore = queryResults.length > 0
@@ -492,7 +498,21 @@ export async function generateCommentReply(
   // Apply filters
   const productsFromDb = allProducts.filter(p => p.inStock && p.hasAffiliate && p.shortURL);
 
-  const suggestedProducts = productsFromDb
+  // Filter by budget if specified
+  let filteredByBudget = productsFromDb;
+  if (purchaseResponse.filters.budget_max) {
+    const budgetMax = purchaseResponse.filters.budget_max;
+    const budgetMin = purchaseResponse.filters.budget_min || 0;
+
+    filteredByBudget = productsFromDb.filter(p => {
+      if (!p.price) return false;
+      return p.price >= budgetMin && p.price <= budgetMax;
+    });
+
+    console.log(`[Stage 2] Filtered by budget ${budgetMin}-${budgetMax}: ${productsFromDb.length} → ${filteredByBudget.length} products`);
+  }
+
+  const suggestedProducts = filteredByBudget
     .filter(p => p.shortURL)
     .map(p => ({
       id: p.id,
@@ -518,7 +538,11 @@ export async function generateCommentReply(
       purchaseResponse.retrieval_plan.AI_query,
       transcripts,
       suggestedProducts,
-      model || "gpt-4o-mini"
+      model || "gpt-4o-mini",
+      {
+        budget_min: purchaseResponse.filters.budget_min,
+        budget_max: purchaseResponse.filters.budget_max
+      }
     );
   } catch (error) {
     console.error(`[Stage 2] Error:`, error);

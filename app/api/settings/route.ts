@@ -8,7 +8,14 @@ const settingsSchema = z.object({
   channelId: z.string().min(1),
   syncDays: z.number().int().min(1).max(30),
   maxSyncDays: z.number().int().min(1).max(30),
-  aiTranscriptFallback: z.boolean().default(false)
+  aiTranscriptFallback: z.boolean().default(false),
+  // AI Prompts
+  firstPrompt: z.string().optional(),
+  purchasePrompt: z.string().optional(),
+  // Model Selection
+  commentReplyModel: z.string().optional(),
+  transcriptSummaryModel: z.string().optional(),
+  productEmbeddingModel: z.string().optional(),
 });
 
 export async function GET() {
@@ -30,7 +37,14 @@ export async function POST(request: Request) {
     channelId: input.channelId,
     syncDays: input.syncDays,
     maxSyncDays: input.maxSyncDays,
-    aiTranscriptFallback: input.aiTranscriptFallback
+    aiTranscriptFallback: input.aiTranscriptFallback,
+    // AI Prompts - use null if empty string
+    firstPrompt: input.firstPrompt || null,
+    purchasePrompt: input.purchasePrompt || null,
+    // Model Selection
+    commentReplyModel: input.commentReplyModel || "gpt-5-mini",
+    transcriptSummaryModel: input.transcriptSummaryModel || "gpt-5-mini",
+    productEmbeddingModel: input.productEmbeddingModel || "gpt-5-mini",
   } as const;
 
   const record = await prisma.appSetting.upsert({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { authOptions } from "@/lib/auth";
 import { generateAnswer, previewContexts } from "@/lib/rag/answer";
 import { AnswerRequestSchema } from "@/lib/rag/schema";
 import { z } from "zod";

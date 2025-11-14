@@ -12,7 +12,8 @@ const routes = [
   { path: "/dashboard/moderation", label: "Moderation" },
   { path: "/dashboard/products", label: "Products" },
   { path: "/dashboard/transcripts", label: "Transcripts" },
-  { path: "/dashboard/settings", label: "Settings" },
+  { path: "/dashboard/similarity", label: "Similarity" },
+  { path: "/dashboard/settings", label: "Settings", roles: ["ADMIN"] as const },
   { path: "/dashboard/users", label: "Users", roles: ["ADMIN"] as const }
 ];
 

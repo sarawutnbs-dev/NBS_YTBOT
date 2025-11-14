@@ -159,6 +159,16 @@ model AppSetting {
   syncDays    Int      @default(14)
   maxSyncDays Int      @default(30)
   aiTranscriptFallback Boolean @default(false)
+
+  // AI Prompts Settings
+  firstPrompt     String? @db.Text
+  purchasePrompt  String? @db.Text
+
+  // Model Selection Settings
+  commentReplyModel        String? @default("gpt-5-mini")
+  transcriptSummaryModel   String? @default("gpt-5-mini")
+  productEmbeddingModel    String? @default("gpt-5-mini")
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

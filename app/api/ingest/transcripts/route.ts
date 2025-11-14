@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { authOptions } from "@/lib/auth";
 import { ingestTranscript, ingestTranscripts } from "@/lib/rag/ingest";
 import { TranscriptSourceSchema } from "@/lib/rag/schema";
 import { z } from "zod";

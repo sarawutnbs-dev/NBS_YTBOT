@@ -111,6 +111,7 @@ export async function poolBasedHybridSearch(
     includeProducts?: boolean;
     minScore?: number;
     maxPoolProducts?: number;
+    queryEmbedding?: number[]; // Optional: pre-computed embedding
   } = {}
 ): Promise<SearchResult[]> {
   const {
@@ -119,9 +120,13 @@ export async function poolBasedHybridSearch(
     includeProducts = true,
     minScore = 0.3,
     maxPoolProducts = 100,
+    queryEmbedding: providedEmbedding,
   } = options;
 
   const results: SearchResult[] = [];
+
+  // Use provided embedding or generate new one (only once!)
+  const queryEmbedding = providedEmbedding || await createEmbedding(query);
 
   // 1. Search transcripts (direct hybrid search)
   if (includeTranscripts) {
@@ -130,6 +135,7 @@ export async function poolBasedHybridSearch(
       sourceType: "transcript",
       videoId,
       minScore,
+      queryEmbedding, // Pass embedding to avoid re-creating
     });
     results.push(...transcriptResults);
     console.log(`[Pool-V3] Found ${transcriptResults.length} transcript results`);
@@ -148,9 +154,8 @@ export async function poolBasedHybridSearch(
       if (poolProductIds.length > 0) {
         console.log(`[Pool-V3] Using pool with ${poolProductIds.length} products`);
 
-        // Vector search on pool
-        const embedding = await createEmbedding(query);
-        const productResults = await vectorSearchOnPool(embedding, poolProductIds, {
+        // Vector search on pool (use existing embedding)
+        const productResults = await vectorSearchOnPool(queryEmbedding, poolProductIds, {
           topK: Math.ceil(topK / 2),
           minScore,
         });

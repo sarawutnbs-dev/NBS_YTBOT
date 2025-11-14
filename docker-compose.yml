@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nbs-ytbot-postgres
+    environment:
+      POSTGRES_USER: nbsytbot
+      POSTGRES_PASSWORD: Nbs_YtBot.2025-SecurePass
+      POSTGRES_DB: nbsytbot
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nbsytbot -d nbsytbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: nbs-ytbot-postgres-data
