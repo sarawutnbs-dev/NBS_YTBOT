@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 import { listRecentChannelComments } from '../lib/youtube';
 import { prisma } from '../lib/db';
 
-dotenv.config({ path: '.env.local' });
+dotenv.config();
 
 async function syncComments() {
   console.log('🔄 Starting YouTube comments sync...\n');

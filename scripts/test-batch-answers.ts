@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 
 // Load .env.local BEFORE importing other modules
-dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 async function testBatchAnswers() {
   const { generateBatchAnswers } = await import("../lib/rag/answer");

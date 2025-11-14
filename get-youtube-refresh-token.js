@@ -23,12 +23,6 @@ const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 require('dotenv').config();
 
-// Load .env.local if present (overrides defaults)
-const envLocalPath = path.join(__dirname, '.env.local');
-if (fs.existsSync(envLocalPath)) {
-  require('dotenv').config({ path: envLocalPath });
-}
-
 // ============================================================================
 // STEP 1: Configuration
 // ============================================================================

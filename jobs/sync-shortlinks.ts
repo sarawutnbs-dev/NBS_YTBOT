@@ -10,8 +10,6 @@
  */
 
 import dotenv from 'dotenv';
-// Prefer .env.local if present, then fallback to .env
-dotenv.config({ path: '.env.local' });
 dotenv.config();
 import { PrismaClient } from '@prisma/client';
 import axios from 'axios';

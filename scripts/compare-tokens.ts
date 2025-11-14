@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import crypto from "node:crypto";
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
-dotenv.config({ path: path.join(__dirname, "..", ".env.local") });
+dotenv.config();
 
 const prisma = new PrismaClient();
 

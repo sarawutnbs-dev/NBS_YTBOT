@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 
 // Load .env.local BEFORE importing other modules
-dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 async function run() {
   // Dynamic import after dotenv.config

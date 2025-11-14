@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
-    "studio": "node -r dotenv/config ./node_modules/prisma/build/index.js studio dotenv_config_path=.env.local",
+    "studio": "prisma studio",
     "rag:test": "tsx test-rag-system.ts",
     "rag:ingest:comments": "tsx jobs/ingest-comments.ts",
     "rag:ingest:transcripts": "tsx jobs/ingest-transcripts.ts",

@@ -6,7 +6,6 @@
  */
 
 import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 import { syncShortLinks } from './sync-shortlinks';

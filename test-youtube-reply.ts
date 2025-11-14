@@ -10,7 +10,7 @@ import dotenv from "dotenv";
 
 // Load .env first, then override with .env.local
 dotenv.config({ path: ".env" });
-dotenv.config({ path: ".env.local", override: true });
+dotenv.config({ override: true });
 
 async function testYouTubeReply() {
   console.log("\n🧪 Testing YouTube Comment Reply with Refresh Token\n");

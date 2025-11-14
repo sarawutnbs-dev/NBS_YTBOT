@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import path from "path";
 
 // Load environment variables from .env.local first with override
-dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
+dotenv.config({ override: true });
 // Then load .env for any missing variables
 dotenv.config({ override: false });
 

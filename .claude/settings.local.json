@@ -61,7 +61,8 @@
       "Bash(docker rm:*)",
       "Bash(docker volume create:*)",
       "Bash(docker run:*)",
-      "Bash(npm run shortlink:audit:*)"
+      "Bash(npm run shortlink:audit:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

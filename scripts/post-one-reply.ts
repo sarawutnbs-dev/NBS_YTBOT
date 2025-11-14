@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 // Load .env.local first to ensure getEnv() sees the latest values
-dotenv.config({ path: '.env.local', override: true });
+dotenv.config({ override: true });
 dotenv.config({ override: false });
 
 import { prisma } from '@/lib/db';

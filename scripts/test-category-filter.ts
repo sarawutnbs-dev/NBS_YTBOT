@@ -7,7 +7,7 @@ import { vectorSearch, hybridSearch } from "@/lib/rag/retriever";
 import dotenv from "dotenv";
 import path from "path";
 
-dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
+dotenv.config({ override: true });
 dotenv.config({ override: false });
 
 async function testCategoryFilter() {

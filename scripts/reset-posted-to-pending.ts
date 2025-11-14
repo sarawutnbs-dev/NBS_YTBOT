@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load .env first, then override with .env.local
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
-dotenv.config({ path: path.join(__dirname, "..", ".env.local"), override: true });
+dotenv.config({ override: true });
 
 async function resetPostedToPending() {
   console.log("\n🔄 Resetting POSTED drafts to PENDING...\n");
