@@ -62,8 +62,7 @@ async function main() {
       continue;
     }
 
-  // @ts-expect-error BrandTag delegate is generated at runtime; casting is safe here
-  await prisma.brandTag.upsert({
+    await prisma.brandTag.upsert({
       where: {
         category_brand: {
           category,

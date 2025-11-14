@@ -58,7 +58,8 @@ export function truncateToTokens(text: string, maxTokens: number): string {
 
     // Truncate tokens and decode back
     const truncatedTokens = tokens.slice(0, maxTokens);
-    return enc.decode(truncatedTokens);
+    const decoded = enc.decode(truncatedTokens);
+    return typeof decoded === 'string' ? decoded : new TextDecoder().decode(decoded);
   } catch (error) {
     console.error("[tokenizer] Error truncating text:", error);
     // Fallback: truncate by character count (rough estimate)

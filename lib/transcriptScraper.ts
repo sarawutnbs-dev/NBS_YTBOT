@@ -48,13 +48,13 @@ export async function scrapeTranscriptFromTubeTranscript(
     const url = `https://www.tubetranscript.com/`;
     console.log(`[TubeTranscript] Navigating to ${url}`);
 
-    await page.goto(url, {
+    await page!.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: 30000
     });
 
     // Wait for page to load
-    await page.waitForTimeout(2000);
+    await page!.waitForTimeout(2000);
 
     // Fill in the YouTube URL
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -62,30 +62,30 @@ export async function scrapeTranscriptFromTubeTranscript(
 
     // Find and fill the input field
     const inputSelector = 'input[placeholder*="YouTube"], input[type="text"]';
-    await page.waitForSelector(inputSelector, { timeout: 5000 });
-    await page.fill(inputSelector, youtubeUrl);
+    await page!.waitForSelector(inputSelector, { timeout: 5000 });
+    await page!.fill(inputSelector, youtubeUrl);
 
     // Click the Generate Transcript button
     console.log(`[TubeTranscript] Clicking Generate Transcript button...`);
     const buttonSelector = 'button:has-text("Generate Transcript")';
-    await page.click(buttonSelector);
+    await page!.click(buttonSelector);
 
     // Wait for the transcript to be generated
     console.log(`[TubeTranscript] Waiting for transcript to generate...`);
-    await page.waitForTimeout(5000);
+    await page!.waitForTimeout(5000);
 
     // Wait for the main-transcript-content to appear
     const transcriptSelector = '#main-transcript-content';
     let transcriptText: string | null = null;
 
     try {
-      await page.waitForSelector(transcriptSelector, {
+      await page!.waitForSelector(transcriptSelector, {
         state: 'visible',
         timeout: delayMs
       });
 
       // Extract text from the transcript content
-      transcriptText = await page.$eval(
+      transcriptText = await page!.$eval(
         transcriptSelector,
         (element) => element.textContent || ''
       );
@@ -104,7 +104,7 @@ export async function scrapeTranscriptFromTubeTranscript(
 
       for (const selector of alternativeSelectors) {
         try {
-          const element = await page.$(selector);
+          const element = await page!.$(selector);
           if (element) {
             const text = await element.textContent();
             if (text && text.trim().length > 100) {

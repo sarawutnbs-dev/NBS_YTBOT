@@ -89,11 +89,14 @@ export async function generateDraftsForComments() {
       }
 
       // 7. ตัดข้อมูลให้พอดี token และส่งให้ AI แบบแบ่ง batch
-      const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
-        name: p.name,
-        affiliateUrl: p.shortURL,
-        price: p.price
-      }));
+      const trimmedProducts = products
+        .filter(p => p.shortURL !== null)
+        .slice(0, MAX_PRODUCTS)
+        .map(p => ({
+          name: p.name,
+          affiliateUrl: p.shortURL!,
+          price: p.price
+        }));
       const trimmedChunks = preview.chunks.slice(0, MAX_TRANSCRIPT_CHUNKS);
 
       console.log(`[draftService] Processing ${videoComments.length} comments for video ${videoId} in batches of ${MAX_COMMENTS_PER_CALL}`);
@@ -209,11 +212,14 @@ export async function generateDraftsForVideo(videoId: string) {
   }
 
   // 5. ตัดข้อมูลให้พอดี token
-  const trimmedProducts = products.slice(0, MAX_PRODUCTS).map(p => ({
-    name: p.name,
-    affiliateUrl: p.shortURL,
-    price: p.price
-  }));
+  const trimmedProducts = products
+    .filter(p => p.shortURL !== null)
+    .slice(0, MAX_PRODUCTS)
+    .map(p => ({
+      name: p.name,
+      affiliateUrl: p.shortURL!,
+      price: p.price
+    }));
   const trimmedChunks = preview.chunks.slice(0, MAX_TRANSCRIPT_CHUNKS);
 
   // 6. ส่งให้ AI ทำงานแบบแบ่ง batch ตามจำนวนคอมเมนต์

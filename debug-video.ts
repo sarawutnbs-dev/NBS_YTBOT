@@ -24,11 +24,8 @@ async function debugVideo() {
 
     console.log("✅ Video found:");
     console.log(`   - Title: ${videoIndex.title}`);
-    console.log(`   - Channel: ${videoIndex.channelName}`);
     console.log(`   - Status: ${videoIndex.status}`);
     console.log(`   - Tags: ${videoIndex.tags?.join(", ") || "None"}`);
-    console.log(`   - Has transcript: ${videoIndex.transcript ? "YES" : "NO"}`);
-    console.log(`   - Transcript length: ${videoIndex.transcript?.length || 0} chars`);
 
     // 2. Check Comments
     console.log("\n2️⃣ Checking Comments...");
@@ -149,10 +146,6 @@ async function debugVideo() {
 
     if (videoIndex.status !== "READY") {
       issues.push(`❌ Video transcript status is ${videoIndex.status}, not READY`);
-    }
-
-    if (!videoIndex.transcript) {
-      issues.push("❌ Video has no transcript data");
     }
 
     if (videoTags.length === 0) {

@@ -62,7 +62,8 @@
       "Bash(docker volume create:*)",
       "Bash(docker run:*)",
       "Bash(npm run shortlink:audit:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(timeout 120 npm run build:*)"
     ],
     "deny": [],
     "ask": []

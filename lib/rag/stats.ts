@@ -305,7 +305,6 @@ export async function getDocumentDetails(docId: number): Promise<{
     chunkIndex: number;
     text: string;
     tokens: number;
-    hasEmbedding: boolean;
   }>;
 }> {
   try {
@@ -331,7 +330,6 @@ export async function getDocumentDetails(docId: number): Promise<{
         chunkIndex: c.chunkIndex,
         text: c.text,
         tokens: countTokens(c.text),
-        hasEmbedding: c.embedding !== null,
       })),
     };
   } catch (error) {

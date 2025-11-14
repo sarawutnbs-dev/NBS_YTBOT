@@ -45,33 +45,33 @@ async function main() {
     console.log("\n");
 
     // Show second chunk structure (if exists)
-    if (chunks.length > 1) {
+    if (parsed.length > 1) {
       console.log("=== Second Chunk Structure ===");
-      console.log(JSON.stringify(chunks[1], null, 2));
+      console.log(JSON.stringify(parsed[1], null, 2));
       console.log("\n");
     }
 
     // Check field names
     console.log("=== Available Fields in First Chunk ===");
-    console.log(Object.keys(chunks[0]));
+    console.log(Object.keys(parsed[0]));
     console.log("\n");
 
     // Try different extraction methods
     console.log("=== Extraction Test ===");
-    const method1 = chunks.map((c: any) => c.text || "").join(" ");
+    const method1 = parsed.map((c: any) => c.text || "").join(" ");
     console.log(`Method 1 (c.text): Length = ${method1.length}, Preview = ${method1.substring(0, 100)}`);
 
-    const method2 = chunks.map((c: any) => c.content || "").join(" ");
+    const method2 = parsed.map((c: any) => c.content || "").join(" ");
     console.log(`Method 2 (c.content): Length = ${method2.length}, Preview = ${method2.substring(0, 100)}`);
 
-    const method3 = chunks.map((c: any) => c.text || c.content || "").join(" ");
+    const method3 = parsed.map((c: any) => c.text || c.content || "").join(" ");
     console.log(`Method 3 (c.text || c.content): Length = ${method3.length}, Preview = ${method3.substring(0, 100)}`);
 
     // Check all possible text fields
     const possibleFields = ['text', 'content', 'transcript', 'body', 'message', 'data'];
     console.log("\n=== Testing All Possible Fields ===");
     for (const field of possibleFields) {
-      const testExtract = chunks.map((c: any) => c[field] || "").join(" ");
+      const testExtract = parsed.map((c: any) => c[field] || "").join(" ");
       if (testExtract.length > 0) {
         console.log(`✅ Field "${field}": Length = ${testExtract.length}, Preview = ${testExtract.substring(0, 100)}`);
       } else {

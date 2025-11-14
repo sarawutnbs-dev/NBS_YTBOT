@@ -115,7 +115,7 @@ async function reindexAllProducts(options: {
           const url = product.shortURL || product.affiliateUrl || product.productLink || undefined;
 
           const productSource: ProductSource = {
-            productId: product.shopeeProductId,
+            productId: product.shopeeProductId || product.id,
             name: product.name,
             description: undefined,
             price: product.price != null ? Number(product.price) : undefined,
@@ -137,7 +137,7 @@ async function reindexAllProducts(options: {
           failed++;
           const errorMsg = error instanceof Error ? error.message : "Unknown error";
           errors.push({
-            shopeeProductId: product.shopeeProductId,
+            shopeeProductId: product.shopeeProductId || product.id,
             error: errorMsg,
           });
         }

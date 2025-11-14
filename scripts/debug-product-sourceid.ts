@@ -100,10 +100,10 @@ async function debugSourceId() {
     console.log("Summary:");
     console.log("=".repeat(60));
 
-    if (productsById.length > 0) {
+    if (productsByIdTest.length > 0) {
       console.log("✅ RagDocument.sourceId = Product.id (Internal ID)");
       console.log("   The search is using Product.id, not shopeeProductId!");
-    } else if (productsByShopeeId.length > 0) {
+    } else if (productsByShopeeTest.length > 0) {
       console.log("✅ RagDocument.sourceId = Product.shopeeProductId");
     } else {
       console.log("❌ No matches found - data may be inconsistent");

@@ -85,7 +85,7 @@ export default function PostAllReplyModal({ visible, groups, onClose, onComplete
     if (selectedCommentIds.length === 0) return;
 
     setProcessing(true);
-    const newStatuses = new Map<CommentProcessStatus>();
+    const newStatuses = new Map<string, CommentProcessStatus>();
 
     // Initialize all selected comments as pending
     selectedCommentIds.forEach((commentId) => {
@@ -242,7 +242,7 @@ export default function PostAllReplyModal({ visible, groups, onClose, onComplete
               {pendingComments.map((comment) => {
                 const isSelected = selectedCommentIds.includes(comment.id);
                 const commentStatus = commentStatuses.get(comment.id);
-                const products = parseProducts(comment.draft?.suggestedProducts || null);
+                const products = parseProducts((comment.draft?.suggestedProducts as string) || null);
 
                 return (
                   <Card

@@ -299,57 +299,6 @@ export async function ensureMissing() {
 
     let metadataUpdatedCount = 0;
 
-    if (false) {
-      console.log(`[ensureMissing] Found ${videosWithMissingInfo.length} video(s) with missing title/year`);
-
-      // Process in batches to avoid rate limiting
-      const BATCH_SIZE = 5;
-      const DELAY_BETWEEN_REQUESTS = 200; // 200ms delay
-
-      for (let i = 0; i < videosWithMissingInfo.length; i++) {
-        const video = videosWithMissingInfo[i];
-
-        try {
-          console.log(`[ensureMissing] Fetching metadata for ${video.videoId} (${i + 1}/${videosWithMissingInfo.length})...`);
-          const meta = await fetchVideoMeta(video.videoId);
-
-          if (meta) {
-            const updateData: any = {};
-
-            // Update title if missing
-            if (!video.title || video.title === "") {
-              updateData.title = meta.title || "Untitled Video";
-            }
-
-            // Update publishedAt if missing
-            if (!video.publishedAt && meta.publishedAt) {
-              updateData.publishedAt = new Date(meta.publishedAt);
-            }
-
-            if (Object.keys(updateData).length > 0) {
-              await prisma.videoIndex.update({
-                where: { videoId: video.videoId },
-                data: updateData,
-              });
-              metadataUpdatedCount++;
-              console.log(`[ensureMissing] ✅ Updated metadata for ${video.videoId}:`, updateData);
-            }
-          } else {
-            console.warn(`[ensureMissing] No metadata returned for ${video.videoId}`);
-          }
-
-          // Add delay between requests to avoid rate limiting
-          if (i < videosWithMissingInfo.length - 1 && (i + 1) % BATCH_SIZE === 0) {
-            console.log(`[ensureMissing] Batch completed, waiting ${DELAY_BETWEEN_REQUESTS}ms...`);
-            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_REQUESTS));
-          }
-        } catch (error) {
-          console.error(`[ensureMissing] Failed to fetch metadata for ${video.videoId}:`, error);
-          // Continue with other videos instead of failing completely
-        }
-      }
-    }
-
     // NEW: Check for videos without GPT-5 summary and re-index them
     console.log(`[ensureMissing] Checking for videos with missing GPT-5 summary...`);
     const videosNeedingSummary = await prisma.videoIndex.findMany({

@@ -229,11 +229,8 @@ async function ensureProductsIndexed(videoTags: string[]) {
       select: {
         id: true,
         name: true,
-        description: true,
         price: true,
-        affiliateUrl: true,
-        imageUrl: true,
-        category: true,
+        shortURL: true,
         tags: true,
       }
     });
@@ -261,11 +258,8 @@ async function ensureProductsIndexed(videoTags: string[]) {
       await ingestProduct({
         productId: product.id,
         name: product.name,
-        description: product.description || undefined,
         price: product.price ? parseFloat(product.price.toString()) : undefined,
-        url: product.affiliateUrl || undefined,
-        imageUrl: product.imageUrl || undefined,
-        category: product.category || undefined,
+        url: product.shortURL || undefined,
         tags: product.tags || undefined,
       }, false);
 
