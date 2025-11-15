@@ -131,6 +131,7 @@ export async function POST(request: Request) {
             videoId: true,
             title: true,
             tags: true,
+            summaryText: true,
             chunksJSON: true,
           },
         });
@@ -171,12 +172,24 @@ export async function POST(request: Request) {
 
         for (const [index, video] of videosToTag.entries()) {
           try {
-            // chunksJSON is an array of strings
-            const chunks = JSON.parse(video.chunksJSON!);
-            const transcriptText = Array.isArray(chunks) ? chunks.join(" ") : String(chunks);
+            // Use summaryText (GPT-5 summary) if available, otherwise fall back to chunksJSON
+            let transcriptText: string;
+            let source: string;
+
+            if (video.summaryText && video.summaryText.trim().length > 0) {
+              transcriptText = video.summaryText;
+              source = "summary";
+              console.log(`[video-tag-regen] Using summary text (${transcriptText.length} chars)`);
+            } else {
+              // Fallback to chunksJSON
+              const chunks = JSON.parse(video.chunksJSON!);
+              transcriptText = Array.isArray(chunks) ? chunks.join(" ") : String(chunks);
+              source = "chunks";
+              console.log(`[video-tag-regen] Using full transcript chunks (${transcriptText.length} chars)`);
+            }
 
             console.log(
-              `[video-tag-regen] [${index + 1}/${videosToTag.length}] Processing: ${video.title.substring(0, 60)}... (${transcriptText.length} chars)`
+              `[video-tag-regen] [${index + 1}/${videosToTag.length}] Processing: ${video.title.substring(0, 60)}... (${source}, ${transcriptText.length} chars)`
             );
             console.log(`[video-tag-regen] Transcript preview: ${transcriptText.substring(0, 200)}...`);
 
