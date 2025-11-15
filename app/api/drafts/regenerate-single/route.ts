@@ -48,8 +48,13 @@ export async function POST(request: NextRequest) {
 
     // Trigger regeneration by calling the generate-video endpoint
     // This will create a new draft for this comment
+    // Use localhost for internal API calls to avoid SSL issues in Docker
+    const baseUrl = process.env.NODE_ENV === "production"
+      ? "http://localhost:3000"
+      : request.nextUrl.origin;
+
     const generateResponse = await fetch(
-      `${request.nextUrl.origin}/api/drafts/generate-video`,
+      `${baseUrl}/api/drafts/generate-video`,
       {
         method: "POST",
         headers: {
