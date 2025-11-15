@@ -5,7 +5,10 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "NotebookSPEC Reply Assistant",
-  description: "Curate, draft, and approve YouTube replies with affiliate recommendations."
+  description: "Curate, draft, and approve YouTube replies with affiliate recommendations.",
+  icons: {
+    icon: '/favicon.ico',
+  }
 };
 
 export default function RootLayout({
