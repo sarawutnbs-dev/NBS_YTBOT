@@ -41,11 +41,10 @@ async function testOption1WithIngest() {
         await ingestProduct({
           productId: product.id,
           name: product.name,
-          price: product.price || 0,
-          commission: product.commission || 0,
-          affiliateUrl: product.affiliateUrl,
-          productUrl: product.productLink || "",
-          tags: product.tags,
+          price: product.price ?? undefined,
+          url: product.affiliateUrl || product.productLink || undefined,
+          tags: product.tags ?? undefined,
+          category: product.categoryName ?? undefined,
           description: `${product.name} - ${product.brand} - ${product.categoryName}`
         }, true); // overwrite if exists
 

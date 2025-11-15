@@ -1,0 +1,68 @@
+services:
+  db:
+    image: ankane/pgvector
+    container_name: nbsbot-db
+    restart: always
+    environment:
+      POSTGRES_USER: nbsytbot
+      POSTGRES_PASSWORD: nbsytbot123
+      POSTGRES_DB: nbsytbot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5434:5432"  # ใช้ port 5434 เพื่อไม่ชนกับ service อื่น
+    networks:
+      - nbsbot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nbsytbot -d nbsytbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: registry.nbsi.me/nbsbot:latest
+    container_name: nbsbot-app
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "127.0.0.1:3001:3000"  # ใช้ port 3001 ภายนอก
+    networks:
+      - nbsbot-network
+      - caddy-network
+    volumes:
+      - app_uploads:/app/uploads  # สำหรับไฟล์ที่อาจมีการอัพโหลด
+      - ./prisma:/app/prisma       # ให้ Prisma migrations อ่าน/อัปเดตไฟล์บนเซิร์ฟเวอร์
+    shm_size: '1gb'  # Shared memory for Playwright/Chromium
+    command: >
+      sh -c "
+        echo 'Running Prisma migrations...' &&
+        npx prisma migrate deploy &&
+        echo 'Starting application...' &&
+        node server.js
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  nbsbot-network:
+    driver: bridge
+  caddy-network:
+    external: true
+    name: registry_registry-network
+
+volumes:
+  postgres_data:
+    driver: local
+  app_uploads:
+    driver: local

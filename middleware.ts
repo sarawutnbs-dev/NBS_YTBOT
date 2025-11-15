@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const PUBLIC_PATHS = ["/auth/login", "/api/auth"];
+const PUBLIC_PATHS = ["/auth/login", "/api/auth", "/api/health"];
 const isProduction =
   ((globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env?.NODE_ENV ??
     "development") === "production";
@@ -32,5 +32,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|auth/login).*)"]
+  matcher: ["/((?!api/(?:auth|health)|_next/static|_next/image|favicon.ico|auth/login).*)"]
 };

@@ -48,8 +48,9 @@ async function testStudyGamingComment() {
 
     console.log("-".repeat(60));
     console.log(`Contexts: ${result.contexts.length} chunks`);
-    if (result.scores.length > 0) {
-      console.log(`Top 3 scores: ${result.scores.slice(0, 3).join(", ")}`);
+    const topScores = result.contexts.slice(0, 3).map(ctx => ctx.score.toFixed(3));
+    if (topScores.length > 0) {
+      console.log(`Top 3 scores: ${topScores.join(", ")}`);
     }
 
     console.log("\n============================================================");

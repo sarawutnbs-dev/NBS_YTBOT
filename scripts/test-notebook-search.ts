@@ -31,8 +31,10 @@ async function testNotebookSearch() {
     console.log(`Found: ${resultsWithCategory.length} results`);
     if (resultsWithCategory.length > 0) {
       resultsWithCategory.forEach((r, idx) => {
-        console.log(`  ${idx + 1}. Score: ${r.score.toFixed(3)} | ${r.meta?.name?.substring(0, 60)}`);
-        console.log(`     Category: ${r.meta?.category || "N/A"}`);
+        const meta = r.meta as { name?: string; category?: string } | undefined;
+        const nameSnippet = meta?.name ? meta.name.substring(0, 60) : r.sourceId;
+        console.log(`  ${idx + 1}. Score: ${r.score.toFixed(3)} | ${nameSnippet}`);
+        console.log(`     Category: ${meta?.category || "N/A"}`);
       });
     }
 
@@ -46,8 +48,10 @@ async function testNotebookSearch() {
     console.log(`Found: ${resultsNoCategory.length} results`);
     if (resultsNoCategory.length > 0) {
       resultsNoCategory.forEach((r, idx) => {
-        console.log(`  ${idx + 1}. Score: ${r.score.toFixed(3)} | ${r.meta?.name?.substring(0, 60)}`);
-        console.log(`     Category: ${r.meta?.category || "N/A"}`);
+        const meta = r.meta as { name?: string; category?: string } | undefined;
+        const nameSnippet = meta?.name ? meta.name.substring(0, 60) : r.sourceId;
+        console.log(`  ${idx + 1}. Score: ${r.score.toFixed(3)} | ${nameSnippet}`);
+        console.log(`     Category: ${meta?.category || "N/A"}`);
       });
     }
   }

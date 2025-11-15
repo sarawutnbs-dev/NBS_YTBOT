@@ -12,6 +12,32 @@ import { extractPriceFromQuery, rerankByPrice } from "./price-reranking";
 
 const prisma = new PrismaClient();
 
+/**
+ * Load effective prompts from database or use defaults
+ */
+async function getEffectivePrompts(): Promise<{
+  firstPrompt: string;
+  purchasePrompt: string;
+}> {
+  try {
+    const settings = await prisma.appSetting.findFirst({
+      orderBy: { createdAt: "desc" },
+      select: { firstPrompt: true, purchasePrompt: true }
+    });
+
+    return {
+      firstPrompt: settings?.firstPrompt || FIRST_PROMPT,
+      purchasePrompt: settings?.purchasePrompt || PURCHASE_PROMPT
+    };
+  } catch (error) {
+    console.error('[Prompts] Failed to load custom prompts, using defaults:', error);
+    return {
+      firstPrompt: FIRST_PROMPT,
+      purchasePrompt: PURCHASE_PROMPT
+    };
+  }
+}
+
 export interface CommentReplyRequest {
   commentText: string;
   videoId: string;
@@ -100,6 +126,7 @@ async function callStage1Classification(
   commentText: string,
   transcripts: string,
   model: string,
+  firstPrompt: string,
   temperature?: number
 ): Promise<Stage1Response> {
   console.log(`[Stage 1] Calling classification AI...`);
@@ -107,7 +134,7 @@ async function callStage1Classification(
   const messages = [
     {
       role: "system" as const,
-      content: FIRST_PROMPT
+      content: firstPrompt
     },
     {
       role: "user" as const,
@@ -257,6 +284,7 @@ async function callStage2Purchase(
     shortURL: string | null;
   }>,
   model: string,
+  purchasePrompt: string,
   temperature: number | undefined,
   filters?: {
     budget_min?: number | null;
@@ -282,7 +310,7 @@ async function callStage2Purchase(
       }).join("\n")
     : "\n\n(ไม่มีสินค้าแนะนำ)";
 
-  const systemPrompt = `${PURCHASE_PROMPT}
+  const systemPrompt = `${purchasePrompt}
 
 --- Context Information ---
 
@@ -384,6 +412,13 @@ export async function generateCommentReply(
   const startTime = Date.now();
 
   // ============================================
+  // Load effective prompts (custom or default)
+  // ============================================
+  const prompts = await getEffectivePrompts();
+  console.log(`[Prompts] Using ${prompts.firstPrompt === FIRST_PROMPT ? 'default' : 'custom'} first prompt`);
+  console.log(`[Prompts] Using ${prompts.purchasePrompt === PURCHASE_PROMPT ? 'default' : 'custom'} purchase prompt`);
+
+  // ============================================
   // STAGE 1: Classification & Intent Analysis
   // ============================================
 
@@ -393,7 +428,7 @@ export async function generateCommentReply(
   // Step 2: Call Stage 1 AI
   let stage1Response: Stage1Response;
   try {
-    stage1Response = await callStage1Classification(commentText, transcripts, model || "gpt-4o-mini", temperature);
+    stage1Response = await callStage1Classification(commentText, transcripts, model || "gpt-4o-mini", prompts.firstPrompt, temperature);
   } catch (error) {
     console.error(`[Stage 1] Error:`, error);
     throw error;
@@ -407,9 +442,9 @@ export async function generateCommentReply(
 
     const tokenUsage = {
       queryTokens: countTokens(commentText),
-      systemTokens: countTokens(FIRST_PROMPT),
+      systemTokens: countTokens(prompts.firstPrompt),
       contextTokens: countTokens(transcripts),
-      totalTokens: countTokens(FIRST_PROMPT + commentText + transcripts + stage1Response.reply_text)
+      totalTokens: countTokens(prompts.firstPrompt + commentText + transcripts + stage1Response.reply_text)
     };
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -545,6 +580,7 @@ export async function generateCommentReply(
       transcripts,
       suggestedProducts,
       model || "gpt-4o-mini",
+      prompts.purchasePrompt,
       temperature,
       {
         budget_min: purchaseResponse.filters.budget_min,
@@ -609,9 +645,9 @@ export async function generateCommentReply(
   // Step 8: Calculate token usage
   const tokenUsage = {
     queryTokens: countTokens(commentText),
-    systemTokens: countTokens(FIRST_PROMPT + PURCHASE_PROMPT),
+    systemTokens: countTokens(prompts.firstPrompt + prompts.purchasePrompt),
     contextTokens: countTokens(transcripts),
-    totalTokens: countTokens(FIRST_PROMPT + PURCHASE_PROMPT + commentText + transcripts + replyText)
+    totalTokens: countTokens(prompts.firstPrompt + prompts.purchasePrompt + commentText + transcripts + replyText)
   };
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
