@@ -19,6 +19,7 @@ export interface CommentReplyRequest {
   includeTranscripts?: boolean;
   maxTokens?: number;
   model?: string; // override chat model per request
+  temperature?: number;
 }
 
 export interface ProductRecommendation {
@@ -98,7 +99,8 @@ function countTokens(text: string): number {
 async function callStage1Classification(
   commentText: string,
   transcripts: string,
-  model: string
+  model: string,
+  temperature?: number
 ): Promise<Stage1Response> {
   console.log(`[Stage 1] Calling classification AI...`);
 
@@ -116,7 +118,8 @@ async function callStage1Classification(
   const rawResponse = await chatCompletion(messages, {
     model: model || "gpt-4o-mini",
     maxTokens: 1500,
-    jsonMode: true
+    jsonMode: true,
+    temperature
   });
 
   console.log(`[Stage 1] Raw response: ${rawResponse.substring(0, 200)}...`);
@@ -254,6 +257,7 @@ async function callStage2Purchase(
     shortURL: string | null;
   }>,
   model: string,
+  temperature: number | undefined,
   filters?: {
     budget_min?: number | null;
     budget_max?: number | null;
@@ -304,7 +308,8 @@ ${productsText}`;
   const rawResponse = await chatCompletion(messages, {
     model: model || "gpt-4o-mini",
     maxTokens: 2000,
-    jsonMode: true
+    jsonMode: true,
+    temperature
   });
 
   // Parse response
@@ -370,7 +375,8 @@ export async function generateCommentReply(
     commentText,
     videoId,
     maxTokens = 3000,
-    model
+    model,
+    temperature
   } = request;
 
   console.log(`[CommentReply] 2-Stage System: Generating reply for: "${commentText.substring(0, 50)}..."`);
@@ -387,7 +393,7 @@ export async function generateCommentReply(
   // Step 2: Call Stage 1 AI
   let stage1Response: Stage1Response;
   try {
-    stage1Response = await callStage1Classification(commentText, transcripts, model || "gpt-4o-mini");
+    stage1Response = await callStage1Classification(commentText, transcripts, model || "gpt-4o-mini", temperature);
   } catch (error) {
     console.error(`[Stage 1] Error:`, error);
     throw error;
@@ -539,6 +545,7 @@ export async function generateCommentReply(
       transcripts,
       suggestedProducts,
       model || "gpt-4o-mini",
+      temperature,
       {
         budget_min: purchaseResponse.filters.budget_min,
         budget_max: purchaseResponse.filters.budget_max
@@ -575,7 +582,7 @@ export async function generateCommentReply(
     try {
       for (const prod of products) {
         const suggestedProduct = suggestedProducts.find(p => p.id === prod.id);
-        if (suggestedProduct && suggestedProduct.shortURL) {
+        if (suggestedProduct && suggestedProduct.shortURL && suggestedProduct.name) {
           // Extract model number for matching
           const modelMatch = suggestedProduct.name.match(/[A-Z]\d+[A-Z]*-[A-Z0-9]+/);
           if (modelMatch) {
