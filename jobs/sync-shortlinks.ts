@@ -24,7 +24,9 @@ const delayMinutesEnv = process.env.SHORTLINK_DELAY_MINUTES;
 const DELAY_MINUTES = delaySecondsEnv != null
   ? Number(delaySecondsEnv) / 60
   : Number(delayMinutesEnv || 5);
-const SHORTLINK_API_URL = process.env.SHORTLINK_API_URL || 'https://nbsi.me';
+// Use internal Docker network URL by default for better security
+const SHORTLINK_API_URL = process.env.SHORTLINK_API_URL || 'http://shortlink-app:8080';
+const SHORTLINK_API_KEY = process.env.SHORTLINK_API_KEY;
 const AFFILIATE_ID = process.env.SHORTLINK_AFFILIATE_ID || '15175090000';
 const DRY_RUN = (process.env.SHORTLINK_DRY_RUN || '').toLowerCase() === 'true';
 
@@ -72,9 +74,19 @@ async function sendBatchToShortLink(products: ProductToShorten[]): Promise<numbe
       return items.length;
     }
 
-    const response = await axios.post(`${SHORTLINK_API_URL}/api/shorten`, {
-      items
-    });
+    // Prepare headers with API key authentication
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (SHORTLINK_API_KEY) {
+      headers['Authorization'] = `Bearer ${SHORTLINK_API_KEY}`;
+    }
+
+    const response = await axios.post(
+      `${SHORTLINK_API_URL}/api/shorten`,
+      { items },
+      { headers }
+    );
 
     console.log(`✓ Sent ${items.length} products to shortLink service`);
     console.log(`  Response:`, response.data);
@@ -100,9 +112,19 @@ async function fetchShortUrls(productIds: string[]): Promise<Record<string, stri
       return {};
     }
 
-    const response = await axios.post(`${SHORTLINK_API_URL}/api/batch-stats`, {
-      product_ids: productIds
-    });
+    // Prepare headers with API key authentication
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (SHORTLINK_API_KEY) {
+      headers['Authorization'] = `Bearer ${SHORTLINK_API_KEY}`;
+    }
+
+    const response = await axios.post(
+      `${SHORTLINK_API_URL}/api/batch-stats`,
+      { product_ids: productIds },
+      { headers }
+    );
 
     console.log(`✓ Fetched ${Object.keys(response.data).length} shortURLs from service`);
 
@@ -156,6 +178,7 @@ export async function syncShortLinks() {
   console.log(`  - Batch Size: ${BATCH_SIZE}`);
   console.log(`  - Delay: ${DELAY_MINUTES} minutes (${(DELAY_MINUTES*60).toFixed(0)} seconds)`);
   console.log(`  - ShortLink API: ${SHORTLINK_API_URL}`);
+  console.log(`  - API Authentication: ${SHORTLINK_API_KEY ? '✓ Enabled' : '✗ Disabled (INSECURE!)'}`);
   console.log(`  - Affiliate ID: ${AFFILIATE_ID}`);
   console.log(`  - Dry Run: ${DRY_RUN}`);
   console.log('');
